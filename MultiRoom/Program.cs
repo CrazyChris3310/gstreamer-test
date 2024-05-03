@@ -7,6 +7,8 @@ using Gst;
 using WebSocketSharp;
 using WebSocketSharp.Server;
 using HttpStatusCode = WebSocketSharp.Net.HttpStatusCode;
+using Task = System.Threading.Tasks.Task;
+using Thread = System.Threading.Thread;
 
 namespace MultiRoom;
 
@@ -53,7 +55,16 @@ class Program
                     var tee = _pipeline.GetByName("splitter");
                     var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
                     var teePad = tee.RequestPad(padTemplate);
-                    client.AddPeer(teePad, 1);
+                    client.AddPeer(teePad, 10);
+
+                    // new Task(() =>
+                    // {
+                    //     Thread.Sleep(3000);
+                    //     var tee = _pipeline.GetByName("splitter");
+                    //     var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
+                    //     var teePad = tee.RequestPad(padTemplate);
+                    //     client.AddPeer(teePad, 10);
+                    // }).Start();
                 };
                 return client;
             });

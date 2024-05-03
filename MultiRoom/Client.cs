@@ -8,6 +8,7 @@ using Newtonsoft.Json;
 using WebSocketSharp;
 using WebSocketSharp.Server;
 using static System.Diagnostics.Debug;
+using Object = Gst.Object;
 using Value = GLib.Value;
 
 namespace MultiRoom;
@@ -19,7 +20,7 @@ public class Client : WebSocketBehavior
 
     private Element incomingWebrtc;
 
-    private Dictionary<int, Element> outgoingWebrtc;
+    private Dictionary<int, Element> outgoingWebrtc = new();
 
     private Element outgoingPeer;
 
@@ -66,29 +67,47 @@ public class Client : WebSocketBehavior
 
     public void AddPeer(Pad srcPad, int dest)
     {
+        // var source = ElementFactory.Make("videotestsrc");
+        // source.SetProperty("pattern", new Value(18));
+        var queue = ElementFactory.Make("queue");
         var vp8enc = ElementFactory.Make("vp8enc");
         var rtppayload = ElementFactory.Make("rtpvp8pay");
-        var queue = ElementFactory.Make("queue");
         var filter = ElementFactory.Make("capsfilter");
-        Util.SetObjectArg(filter, "caps", "application/x-rtp,media=video,encoding-name=VP8,payload=97");
-
+        Util.SetObjectArg(filter, "caps", "application/x-rtp,media=video,encoding-name=VP8,payload=96");
+        
         var outgoing = CreateWebrtcBin(dest);
+        // outgoing.Connect("on-new-transceiver", (o, args) =>
+        // {
+        //     var transceiver = args.Args[0] as Object;
+        //     Console.WriteLine($"transceiver added: direction={transceiver.GetProperty("direction").Val}, " +
+        //                       $"kind={transceiver.GetProperty("kind").Val}, " +
+        //                       $"mid={transceiver.GetProperty("mid").Val}, " +
+        //                       $"mlineindex={transceiver.GetProperty("mlineindex").Val}");
+        // });
+        // outgoing.Emit("add-transceiver", WebRTCRTPTransceiverDirection.Sendonly,
+        //     Caps.FromString("application/x-rtp,media=video,encoding-name=VP8/9000,payload=96")
+        // );
         outgoingWebrtc[dest] = outgoing;
-        outgoingPeer = outgoing;
+        // outgoingPeer = outgoing;
+        
+        _pipeline.Add(queue, vp8enc, rtppayload, filter, outgoing);
+        Element.Link(queue, vp8enc, rtppayload, filter);
 
-        _pipeline.Add(vp8enc, rtppayload, queue, filter, outgoing);
-        Element.Link(vp8enc, rtppayload, queue, filter);
+        var padLinkReturn = srcPad.Link(queue.GetStaticPad("sink"));
+        Console.WriteLine("Result of linking tee with encoder sink: " + padLinkReturn);
+        
         var sinkPadTemplate = outgoing.PadTemplateList.First(it => it.Name.Contains("sink"));
         var sinkPad = outgoing.RequestPad(sinkPadTemplate);
         var linkReturn = filter.GetStaticPad("src").Link(sinkPad);
         Console.WriteLine("Result of linking filter with webrtc sink: " + linkReturn);
 
-        var padLinkReturn = srcPad.Link(vp8enc.GetStaticPad("sink"));
-        Console.WriteLine("Result of linking tee with encoder sink: " + padLinkReturn);
-        
+        //
+        // _pipeline.Add(eleemnt);
+        // _pipeline.SyncChildrenStates();
 
         _pipeline.SyncChildrenStates();
-        
+
+        // source.SetState(Gst.State.Playing);
         vp8enc.SetState(Gst.State.Playing);
         rtppayload.SetState(Gst.State.Playing);
         queue.SetState(Gst.State.Playing);
@@ -102,33 +121,36 @@ public class Client : WebSocketBehavior
         
         webrtc.SetProperty("stun-server", new Value("stun://stun.l.google.com:19302"));
         webrtc.SetProperty("bundle-policy",  new Value(WebRTCBundlePolicy.MaxBundle));
-        if (dest < 0)
+        if (dest > 0)
         {
             webrtc.Connect("on-negotiation-needed", (o, args) => OnNegotiationNeeded(o, args, dest));
         }
-        else
+        webrtc.Connect("pad-added", (object o, SignalArgs args) =>
         {
-            webrtc.Connect("pad-added", (object o, SignalArgs args) =>
+            Console.WriteLine("Pad has been added");
+            var newPad = (Pad)args.Args[0];
+            if (newPad.Direction == PadDirection.Sink)
             {
-                Console.WriteLine("Pad has been added");
-                var newPad = (Pad)args.Args[0];
-                if (!newPad.HasCurrentCaps)
-                {
-                    Console.WriteLine($"{newPad.Name} has no caps, ignoring");
-                    return;
-                }
+                Console.WriteLine("Sink padd added on element " + (o as Object).Name);
+                return;
+            }
+            if (!newPad.HasCurrentCaps)
+            {
+                Console.WriteLine($"{newPad.Name} has no caps, ignoring");
+                return;
+            }
 
-                var decodeBin = ElementFactory.Make("decodebin");
-                decodeBin.Connect("pad-added", OnIncomingDecodeBinStream);
+            var decodeBin = ElementFactory.Make("decodebin");
+            decodeBin.Connect("pad-added", OnIncomingDecodeBinStream);
 
-                _pipeline.Add(decodeBin);
-                var sinkPad = decodeBin.GetStaticPad("sink");
-                var padLinkReturn = newPad.Link(sinkPad);
-                decodeBin.SyncStateWithParent();
-                Console.WriteLine("Pad link result: " + padLinkReturn);
-                // sink.SetState(Gst.State.Playing);
-            }); 
-        }
+            _pipeline.Add(decodeBin);
+            var sinkPad = decodeBin.GetStaticPad("sink");
+            var padLinkReturn = newPad.Link(sinkPad);
+            decodeBin.SyncStateWithParent();
+            Console.WriteLine("Pad link result: " + padLinkReturn);
+            // sink.SetState(Gst.State.Playing);
+        }); 
+        
         webrtc.Connect("on-ice-candidate", (o, args) => OnIceCandidate(o, args, dest));
         
         return webrtc;
@@ -195,7 +217,8 @@ public class Client : WebSocketBehavior
             var gval = reply.GetValue("offer");
             WebRTCSessionDescription offer = (WebRTCSessionDescription)gval.Val;
             promise = new Promise();
-            incomingWebrtc.Emit("set-local-description", offer, promise);
+            var peer = dest == -1 ? incomingWebrtc : outgoingWebrtc[dest];
+            peer.Emit("set-local-description", offer, promise);
             promise.Interrupt();
 
             var sdpMsg = new SdpMsg { sdp = new SdpContent { type = "offer", sdp = offer.Sdp.AsText() } };
@@ -203,8 +226,9 @@ public class Client : WebSocketBehavior
         }
     }
 
-    public void HandleIncomingSdp(SdpMsg msg)
+    public void HandleIncomingSdp(SdpMsg msg, int dest)
     {
+        var peer = dest == -1 ? incomingWebrtc : outgoingWebrtc[dest];
         if (msg.sdp != null)
         {
             var sdp = msg.sdp;
@@ -237,26 +261,26 @@ public class Client : WebSocketBehavior
                                 var descr = reply.GetValue("answer");
                                 WebRTCSessionDescription offer = (WebRTCSessionDescription)descr.Val;
                                 var promise3 = new Promise();
-                                incomingWebrtc.Emit("set-local-description", offer, promise3);
+                                peer.Emit("set-local-description", offer, promise3);
                                 promise3.Interrupt();
             
                                 var sdpMsg2 = new SdpMsg { sdp = new SdpContent { type = "answer", sdp = offer.Sdp.AsText() } };
-                                Send(new WebMsg() { sdp = sdpMsg2});
+                                Send(new WebMsg() { sdp = sdpMsg2, dest = dest });
                             }
                         });
-                        incomingWebrtc.Emit("create-answer", structure, pp);
+                        peer.Emit("create-answer", structure, pp);
                     }
                 }
             });
             // var promise = new Promise();
-            incomingWebrtc.Emit("set-remote-description", remoteDescription, promise);
+            peer.Emit("set-remote-description", remoteDescription, promise);
         }
         else if (msg.ice != null)
         {
             var ice = msg.ice;
             string candidate = ice.candidate;
             uint sdpMLineIndex = ice.sdpMLineIndex;
-            incomingWebrtc.Emit("add-ice-candidate", sdpMLineIndex, candidate);
+            peer.Emit("add-ice-candidate", sdpMLineIndex, candidate);
         }
     }
 
@@ -275,7 +299,7 @@ public class Client : WebSocketBehavior
                 if (msg.sdp != null)
                 {
                     //_client.InitiateAudioLink(msg.sdp);
-                    HandleIncomingSdp(msg.sdp);
+                    HandleIncomingSdp(msg.sdp, msg.dest);
                 }
             }
         }

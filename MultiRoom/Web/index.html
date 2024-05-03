@@ -18,14 +18,15 @@
             color: red;
         }
     </style>
-    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<!--    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>-->
     <script src="webrtc.js"></script>
 </head>
 <body>
 <!--    <div><video id="local_stream" autoplay playsinline>Your browser doesn't support video</video></div>-->
-    <div id="remote-streams"></div>
 <!--    <div><video id="screen_share" autoplay playsinline>Your browser doesn't support video</video></div>-->
     <video id="local_stream" autoplay playsinline>Your browser doesn't support video</video>
+    <div id="remote-streams"></div>
+<video autoplay playsinline id="test"></video>
     <div>
         Login: <input type="text" id="txtLogin" />
         <input type="button" value="Start!" onclick="doConnect();" id="btnStart" />

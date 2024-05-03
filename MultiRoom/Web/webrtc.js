@@ -64,14 +64,14 @@ function websocketServerConnect() {
                             connection.setLocalDescription(answer);
                             return answer;
                         }).then(answer => {
-                            console.log("Sending answer: " + JSON.stringify(answer));
+                            console.log("Sending answer: " + JSON.stringify({ sdp: { 'sdp': answer }, dest: msg.dest }));
                             sck.send(JSON.stringify({ sdp: { 'sdp': answer }, dest: msg.dest }));
                         }).catch(console.warn)
                     }
                 })
             } else if (msg.sdp.ice != null) {
                 var candidate = new RTCIceCandidate(msg.sdp.ice);
-                console.log("remote ice candidate received: " + msg.sdp.ice);
+                console.log("remote ice candidate received: " + JSON.stringify(msg.sdp.ice));
                 let connection = getOrCreatePeer(msg.dest);
                 connection.addIceCandidate(candidate)
                     .then(() => console.log("Remote candidate added"))
@@ -88,23 +88,14 @@ function websocketServerConnect() {
             peer_connection.close();
             peer_connection = null;
         }
+        
+        incoming.forEach(it => it.close());
+        incoming = [];
 
         sck = null;
     }
 
     peer_connection = createPeer(-1);
-
-    // peer_connection.onnegotiationneeded = () => {
-    //     console.warn("Negotiation needed");
-    //     if (isConnected) {
-    //         peer_connection.createOffer().then(offer => {
-    //             peer_connection.setLocalDescription(offer);
-    //             return offer;
-    //         }).then(offer => {
-    //             sck.send(JSON.stringify({ sdp: { 'sdp': offer } }));
-    //         })
-    //     }
-    // }
     
     navigator.mediaDevices.getUserMedia({ video: true })
         .then(stream => {
@@ -166,11 +157,27 @@ function createPeer(dest) {
         console.error(JSON.stringify(event));
     
     peer.ontrack += (event) => {
-        if (getVideoElement(dest).srcObject !== event.streams[0]) {
+        let element = getOrCreateVideoElement(dest);
+        if (element.srcObject !== event.streams[0]) {
             console.log('Incoming stream');
-            getVideoElement(dest).srcObject = event.streams[0];
+            element.srcObject = event.streams[0];
         }
     }
+
+    let settled = false;
+    const interval = setInterval(() => {
+        if (incoming[dest]) {
+            let remoteStream = incoming[dest].getRemoteStreams()[0];
+            let element = getOrCreateVideoElement(dest);
+            console.log('Incoming stream');
+            element.srcObject = remoteStream
+            settled = true;
+        }
+
+        if (settled) {
+            clearInterval(interval);
+        }
+    }, 500);
     
     return peer;
 }
@@ -179,7 +186,11 @@ function getOrCreateVideoElement(dest) {
     let element = videoElements[dest];
     if (element == null) {
         element = document.createElement("video");
+        element.autoplay = true;
+        element.playsInline = true;
+        document.querySelector("#remote-streams").append(element);
     }
+    return element;
 }
 
 function handleIncomingError(error) {
@@ -191,7 +202,7 @@ function doConnect() {
         peer_connection.setLocalDescription(offer);
         return offer;
     }).then(offer => {
-        sck.send(JSON.stringify({ sdp: { 'sdp': offer } }));
+        sck.send(JSON.stringify({ sdp: { 'sdp': offer }, dest: -1 }));
     })
 }
 let isScreenShared = false;
