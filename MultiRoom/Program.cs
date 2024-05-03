@@ -25,6 +25,7 @@ class Program
 
         public Pipeline Pipeline { get { return _pipeline; } }
         public Element Mixer { get { return _mixer; } }
+        private Dictionary<int, Client> _clients = new();
 
         public int clientsCount = 0;
 
@@ -50,22 +51,37 @@ class Program
                     sinkPad.SetProperty("ypos", new GLib.Value(y));
                     sinkPad.SetProperty("width", new GLib.Value(width));
                     sinkPad.SetProperty("height", new GLib.Value(height));
-                    srcPad.Link(sinkPad);
                     
-                    var tee = _pipeline.GetByName("splitter");
-                    var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
-                    var teePad = tee.RequestPad(padTemplate);
-                    client.AddPeer(teePad, 10);
+                    var clientSplitter = client.tee;
+                    var padTemplate = clientSplitter.PadTemplateList.First(it => it.Name.Contains("src"));
+                    
+                    var toMixPad = clientSplitter.RequestPad(padTemplate);
+                    toMixPad.Link(sinkPad);
+                    
+                    // srcPad.Link(sinkPad);
 
-                    // new Task(() =>
-                    // {
-                    //     Thread.Sleep(3000);
-                    //     var tee = _pipeline.GetByName("splitter");
-                    //     var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
-                    //     var teePad = tee.RequestPad(padTemplate);
-                    //     client.AddPeer(teePad, 10);
-                    // }).Start();
+                    // var clientSplitter = client.tee;
+                    // var padTemplate = clientSplitter.PadTemplateList.First(it => it.Name.Contains("src"));
+                    foreach (var (id, peer) in _clients)
+                    {
+                        if (id == client.id)
+                        {
+                            continue;
+                        }
+                        var newPad = clientSplitter.RequestPad(padTemplate);
+                        peer.AddPeer(newPad, client.id);
+                        
+                        var otherPeerTee = peer.tee;
+                        var otherPeerPad = otherPeerTee.RequestPad(padTemplate);
+                        client.AddPeer(otherPeerPad, id);
+                    }
+                    // var tee = _pipeline.GetByName("splitter");
+
+                    // var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
+                    // var teePad = tee.RequestPad(padTemplate);
+                    // client.AddPeer(teePad, 10);
                 };
+                _clients[client.id] = client;
                 return client;
             });
             _httpServer.SslConfiguration.EnabledSslProtocols = SslProtocols.Tls13;

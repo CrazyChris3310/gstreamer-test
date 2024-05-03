@@ -15,7 +15,8 @@ namespace MultiRoom;
 
 public class Client : WebSocketBehavior
 {
-    private int id;
+    public int id;
+    public Element tee;
     private Pipeline _pipeline;
 
     private Element incomingWebrtc;
@@ -52,15 +53,18 @@ public class Client : WebSocketBehavior
         {
             var q = ElementFactory.Make("queue");
             var conv = ElementFactory.Make("videoconvert");
+            tee = ElementFactory.Make("tee");
 
-            _pipeline.Add(q, conv);
+            _pipeline.Add(q, conv, tee);
             q.Link(conv);
+            conv.Link(tee);
             newPad.Link(q.GetStaticPad("sink"));
             
             OnTrack(conv.GetStaticPad("src"), args);
 
             q.SetState(Gst.State.Playing);
             conv.SetState(Gst.State.Playing);
+            tee.SetState(Gst.State.Playing);
         }
 
     }
