@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyGstreamerApp", "MyGstreamerApp\MyGstreamerApp.csproj", "{5D975766-7395-4342-86C2-47EB64121124}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GstreamerStatic", "GstreamerStatic\GstreamerStatic.csproj", "{ED5B0871-3896-422A-BE18-20DB526D760C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GstreamerDynamic", "GstreamerDynamic\GstreamerDynamic.csproj", "{8522B4FA-65A7-424E-994D-41E29F54F242}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamicPipelineTest", "DynamicPipelineTest\DynamicPipelineTest.csproj", "{F1973D7C-7AD1-40BA-955C-71E2BEBF449D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimpleWebRTCBinTest", "SimpleWebRTCBinTest\SimpleWebRTCBinTest.csproj", "{FD4837E1-518F-4C49-A621-185535AFC077}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiRoom", "MultiRoom\MultiRoom.csproj", "{F793AE14-CC21-46F1-BF92-8D670AF8A2D7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5D975766-7395-4342-86C2-47EB64121124}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5D975766-7395-4342-86C2-47EB64121124}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5D975766-7395-4342-86C2-47EB64121124}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5D975766-7395-4342-86C2-47EB64121124}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ED5B0871-3896-422A-BE18-20DB526D760C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED5B0871-3896-422A-BE18-20DB526D760C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED5B0871-3896-422A-BE18-20DB526D760C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED5B0871-3896-422A-BE18-20DB526D760C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8522B4FA-65A7-424E-994D-41E29F54F242}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8522B4FA-65A7-424E-994D-41E29F54F242}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8522B4FA-65A7-424E-994D-41E29F54F242}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8522B4FA-65A7-424E-994D-41E29F54F242}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F1973D7C-7AD1-40BA-955C-71E2BEBF449D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F1973D7C-7AD1-40BA-955C-71E2BEBF449D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F1973D7C-7AD1-40BA-955C-71E2BEBF449D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F1973D7C-7AD1-40BA-955C-71E2BEBF449D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FD4837E1-518F-4C49-A621-185535AFC077}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD4837E1-518F-4C49-A621-185535AFC077}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD4837E1-518F-4C49-A621-185535AFC077}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD4837E1-518F-4C49-A621-185535AFC077}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F793AE14-CC21-46F1-BF92-8D670AF8A2D7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F793AE14-CC21-46F1-BF92-8D670AF8A2D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F793AE14-CC21-46F1-BF92-8D670AF8A2D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F793AE14-CC21-46F1-BF92-8D670AF8A2D7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

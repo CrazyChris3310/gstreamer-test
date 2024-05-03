@@ -1,0 +1,265 @@
+﻿<!DOCTYPE html>
+<!--
+  vim: set sts=2 sw=2 et :
+
+
+  Demo Javascript app for negotiating and streaming a sendrecv webrtc stream
+  with a GStreamer app. Runs only in passive mode, i.e., responds to offers
+  with answers, exchanges ICE candidates, and streams.
+
+  Author: Nirbheek Chauhan <nirbheek@centricular.com>
+-->
+<html>
+<head>
+    <meta charset="utf-8" />
+    <style>
+
+        .error {
+            color: red;
+        }
+    </style>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <!--<script src="webrtc.js"></script>-->
+    <script>
+        const STATE_DISCONNECTED = 0;
+        const STATE_NONAUTH = 1;
+        const STATE_CONNECTED = 2;
+
+        var state = STATE_DISCONNECTED;
+        var sck = null;
+        var logRows = [];
+        var connect_attempts = 0;
+        var localAudioPromise = null;
+        var audioConnection = null;
+        var reconnectionTimeout = 3000;
+
+        function getLocalPlayerElement() {
+            return document.getElementById("stream");
+        }
+
+        function resetLocalAudio() {
+            if (localAudioPromise) {
+                localAudioPromise.then(stream => {
+                    if (stream) {
+                        stream.getTracks().forEach(function (track) { track.stop(); });
+                    }
+                });
+            }
+
+            // Reset the video element and stop showing the last received frame
+            var videoElement = getLocalPlayerElement();
+            videoElement.pause();
+            videoElement.src = "";
+            videoElement.load();
+        }
+
+        function addMessage(text) {
+            logRows.push(text);
+            var area = document.getElementById('txtLog');
+            area.value = logRows.join("\n");
+            area.scrollTop = area.scrollHeight;
+        }
+
+        function logError(e) {
+            addMessage(e);
+            console.error(e);
+        }
+
+        function makeWsUrl(ep) {
+            var protocol = 'ws';
+            if (window.location.protocol.startsWith('https'))
+                protocol = 'wss';
+
+            var host = window.location.hostname;
+            var port = window.location.port || (protocol == 'wss' ? 433 : 80);
+
+            var wsUrl = protocol + '://' + host + ':' + port + (ep.startsWith('/') ? ep : ('/' + ep));
+            return wsUrl;
+        }
+
+        function setControlsSate(s) {
+            console.log('state: ' + s);
+            state = s;
+            document.getElementById('btnStart').disabled = s != STATE_NONAUTH;
+            document.getElementById('btnSend').disabled = s != STATE_CONNECTED;
+        }
+
+        var reconnecting = false;
+        function queueReconnect() {
+            if (!reconnecting) {
+                addMessage('Unable to connect to server, retrying in 3 seconds...')
+                window.setTimeout(websocketServerConnect, reconnectionTimeout);
+                reconnecting = true;
+            }
+        }
+
+        var rtc_configuration = {
+            iceServers: [{ url: "stun:stun.l.google.com:19302" }]
+        };
+
+        function getLocalAudio() {
+            const constraints = { video: false, audio: true };
+            if (navigator.mediaDevices.getUserMedia) {
+                return navigator.mediaDevices.getUserMedia(constraints);
+            } else {
+                logError("Browser doesn't support getUserMedia!");
+            }
+        }
+
+        function createCall() {
+            audioConnection = new RTCPeerConnection(rtc_configuration);
+            // audioConnection.ondatachannel = onDataChannel;
+            audioConnection.ontrack = function (e) {
+                if (getLocalPlayerElement().srcObject !== event.streams[0]) {
+                    console.warn('Incoming stream ' + event.streams);
+                    getLocalPlayerElement().srcObject = event.streams[0];
+                }
+            };
+            ///* Send our video/audio to the other peer */
+            localAudioPromise = getLocalAudio().then((stream) => {
+                stream.getTracks().forEach(track => audioConnection.addTrack(track, stream))
+                console.warn("Sending local audio " + stream);
+                // audioConnection.addStream(stream);
+                return stream;
+            }).catch(logError);
+            audioConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendData({ sdp: { ice: event.candidate } });
+                }
+            };
+            return localAudioPromise;
+        }
+
+        function onLocalDescription(desc) {
+            console.warn("Got local description: " + JSON.stringify(desc));
+            audioConnection.setLocalDescription(desc).then(function () {
+                console.warn("Sending SDP " + desc.type);
+                sendData({ sdp: { 'sdp': audioConnection.localDescription } });
+            });
+        }
+
+        function generateOffer() {
+            audioConnection.createOffer().then(onLocalDescription).catch(logError);
+        }
+
+        function websocketServerConnect() {
+            setControlsSate(STATE_DISCONNECTED);
+
+            connect_attempts++;
+            if (connect_attempts > 10) {
+                addMessage("Too many connection attempts, aborting. Refresh page to try again");
+                return;
+            }
+            addMessage("Connecting to server...");
+
+            sck = new WebSocket(makeWsUrl('/sck'));
+            sck.onopen = (event) => {
+                reconnecting = false;
+                connect_attempts = 0;
+                setControlsSate(STATE_NONAUTH);
+                addMessage('Successfully connected. Now you can login');
+            };
+            sck.onerror = function (event) {
+                queueReconnect();
+            };
+            sck.onmessage = function (event) {
+                console.log('received ' + event.data);
+                var msg = JSON.parse(event.data);
+                if (msg.chat) {
+                    addMessage(msg.chat.text);
+                } else if (msg.sdp) {
+                    if (!audioConnection)
+                        createCall(msg.sdp);
+
+                    if (msg.sdp.sdp != null) {
+                        audioConnection.setRemoteDescription(msg.sdp.sdp).then(() => {
+                            console.warn("Remote SDP set");
+                            if (msg.sdp.sdp.type == "offer") {
+                                console.warn("Got SDP offer");
+                                localAudioPromise.then((stream) => {
+                                    console.warn("Got local stream, creating answer");
+                                    audioConnection.createAnswer().then(onLocalDescription).catch(logError);
+                                }).catch(logError);
+                            } else {
+                                
+                            }
+                        }).catch(logError);
+                    } else if (msg.sdp.ice != null) {
+                        var candidate = new RTCIceCandidate(msg.sdp.ice);
+                        audioConnection.addIceCandidate(candidate).catch(logError);
+                    } else {
+                        handleIncomingError("Unknown incoming JSON: " + msg);
+                    }
+                } else if (msg.control) {
+                    if (msg.control.authenticated) {
+                        setControlsSate(STATE_CONNECTED);
+                        addMessage('Logged in.');
+                        //if (!audioConnection)
+                        //    createCall(null).then(generateOffer);
+                    } else if (msg.control.userlist) {
+                        const users = document.getElementById('lstUsers');
+                        users.innerHTML = '';
+                        var i = 0;
+                        msg.control.userlist.names.map(function (name) {
+                            var item = document.createElement('option');
+                            item.value = i++;
+                            item.innerHTML = name;
+                            users.appendChild(item);
+                        });
+                        document.getElementById('lblAwaitingCount').innerText = msg.control.userlist.awaiting;
+                    }
+                }
+            };
+            sck.onclose = function (event) {
+                addMessage('Disconnected from server');
+                setControlsSate(STATE_DISCONNECTED);
+
+                if (audioConnection) {
+                    audioConnection.close();
+                    audioConnection = null;
+                }
+
+                sck = null;
+                queueReconnect();
+            }
+        }
+
+        function sendData(data) {
+            if (sck) {
+                const dataString = JSON.stringify(data);
+                console.log('sending ' + dataString);
+                sck.send('' + dataString);
+            }
+        }
+
+        function doLogin() {
+            document.getElementById('btnStart').disabled = true;
+            var loginString = document.getElementById('txtLogin').value;
+            sck.send(loginString);
+        }
+
+        function doSendChatMsg() {
+            var messageText = document.getElementById('txtMessage').value;
+            sendData({ chat: { text: messageText } });
+        }
+
+        window.onload = websocketServerConnect;
+    </script>
+</head>
+<body>
+    <div><video id="stream" autoplay playsinline>Your browser doesn't support video</video></div>
+    <div>
+        Login: <input type="text" id="txtLogin" />
+        <input type="button" value="Start!" onclick="doLogin();" id="btnStart" />
+    </div>
+    <div>
+        <textarea id="txtLog" cols="100" rows="10"></textarea>
+        <select id="lstUsers" size="10" multiple style="width: 100px;"></select>
+        <p>Passive: <span id="lblAwaitingCount"></span></p>
+    </div>
+    <div>
+        Message: <input type="text" id="txtMessage" />
+        <input type="button" value="Send" onclick="doSendChatMsg();" id="btnSend" />
+    </div>
+</body>
+</html>

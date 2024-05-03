@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "dgSpecHash": "AIHyxl91XL+SD2UPQvSIx1+dJilIBL6ondiLPhV7FN1rtmlA2O16zbULdmslgEEu+Wtia8eiuLz9vi8GYqDiiw==",
+  "success": true,
+  "projectFilePath": "C:\\Users\\danil\\RiderProjects\\MyGstreamerApp\\MultiRoom\\MultiRoom.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\danil\\.nuget\\packages\\giosharp\\3.22.25.74\\giosharp.3.22.25.74.nupkg.sha512",
+    "C:\\Users\\danil\\.nuget\\packages\\glibsharp\\3.22.25.74\\glibsharp.3.22.25.74.nupkg.sha512",
+    "C:\\Users\\danil\\.nuget\\packages\\gstreamer-sharp-netcore\\0.0.8\\gstreamer-sharp-netcore.0.0.8.nupkg.sha512",
+    "C:\\Users\\danil\\.nuget\\packages\\gstsharp\\1.18.0\\gstsharp.1.18.0.nupkg.sha512",
+    "C:\\Users\\danil\\.nuget\\packages\\newtonsoft.json\\13.0.3\\newtonsoft.json.13.0.3.nupkg.sha512",
+    "C:\\Users\\danil\\.nuget\\packages\\websocketsharpfork\\1.0.4\\websocketsharpfork.1.0.4.nupkg.sha512"
+  ],
+  "logs": [
+    {
+      "code": "NU1701",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Package 'WebSocketSharpFork 1.0.4' was restored using '.NETFramework,Version=v4.6.1, .NETFramework,Version=v4.6.2, .NETFramework,Version=v4.7, .NETFramework,Version=v4.7.1, .NETFramework,Version=v4.7.2, .NETFramework,Version=v4.8, .NETFramework,Version=v4.8.1' instead of the project target framework 'net8.0'. This package may not be fully compatible with your project.",
+      "libraryId": "WebSocketSharpFork",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    }
+  ]
+}

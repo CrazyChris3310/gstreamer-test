@@ -1,0 +1,6 @@
+@MyGstreamerApp_HostAddress = http://localhost:5297
+
+GET {{MyGstreamerApp_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

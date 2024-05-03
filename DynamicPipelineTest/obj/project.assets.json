@@ -1,0 +1,147 @@
+{
+  "version": 3,
+  "targets": {
+    "net8.0": {
+      "GioSharp/3.22.25.74": {
+        "type": "package",
+        "dependencies": {
+          "GLibSharp": "3.22.25.74"
+        },
+        "compile": {
+          "lib/netstandard2.0/GioSharp.dll": {}
+        },
+        "runtime": {
+          "lib/netstandard2.0/GioSharp.dll": {}
+        }
+      },
+      "GLibSharp/3.22.25.74": {
+        "type": "package",
+        "compile": {
+          "lib/netstandard2.0/GLibSharp.dll": {}
+        },
+        "runtime": {
+          "lib/netstandard2.0/GLibSharp.dll": {}
+        }
+      },
+      "gstreamer-sharp-netcore/0.0.8": {
+        "type": "package",
+        "dependencies": {
+          "GLibSharp": "3.22.25.74",
+          "GioSharp": "3.22.25.74"
+        },
+        "compile": {
+          "lib/netcoreapp3.1/gstreamer-sharp-netcore.dll": {}
+        },
+        "runtime": {
+          "lib/netcoreapp3.1/gstreamer-sharp-netcore.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "GioSharp/3.22.25.74": {
+      "sha512": "YHaT6D+df57EajZ5EzgMFPz+vLA16eOb/sySEka2T5MnCQIhKUFBsJfJY0iMy1CBEBSJzVNrCFi4R55QivhaPg==",
+      "type": "package",
+      "path": "giosharp/3.22.25.74",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "giosharp.3.22.25.74.nupkg.sha512",
+        "giosharp.nuspec",
+        "lib/netstandard2.0/GioSharp.dll"
+      ]
+    },
+    "GLibSharp/3.22.25.74": {
+      "sha512": "82PaZvqcSyHCYEnwTelhlqxT0wvwaNQNI2D9NlP5DzNZ9J0YMBDm9L9I2YmwJmJhcscu171kxpPs0eeRxHvbdg==",
+      "type": "package",
+      "path": "glibsharp/3.22.25.74",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "glibsharp.3.22.25.74.nupkg.sha512",
+        "glibsharp.nuspec",
+        "lib/netstandard2.0/GLibSharp.dll"
+      ]
+    },
+    "gstreamer-sharp-netcore/0.0.8": {
+      "sha512": "MPAdHJk7bYMervk2vtgMFkMgEBbyLzp5IXS8KmfhtA1OcvdC8DHaTP079l7W9Rsd54p3OPJ9sr3kgZ4tMlwIbA==",
+      "type": "package",
+      "path": "gstreamer-sharp-netcore/0.0.8",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "gstreamer-sharp-netcore.0.0.8.nupkg.sha512",
+        "gstreamer-sharp-netcore.nuspec",
+        "icon.png",
+        "lib/netcoreapp3.1/gstreamer-sharp-netcore.dll"
+      ]
+    }
+  },
+  "projectFileDependencyGroups": {
+    "net8.0": [
+      "gstreamer-sharp-netcore >= 0.0.8"
+    ]
+  },
+  "packageFolders": {
+    "C:\\Users\\danil\\.nuget\\packages\\": {}
+  },
+  "project": {
+    "version": "1.0.0",
+    "restore": {
+      "projectUniqueName": "C:\\Users\\danil\\RiderProjects\\MyGstreamerApp\\DynamicPipelineTest\\DynamicPipelineTest.csproj",
+      "projectName": "DynamicPipelineTest",
+      "projectPath": "C:\\Users\\danil\\RiderProjects\\MyGstreamerApp\\DynamicPipelineTest\\DynamicPipelineTest.csproj",
+      "packagesPath": "C:\\Users\\danil\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\danil\\RiderProjects\\MyGstreamerApp\\DynamicPipelineTest\\obj\\",
+      "projectStyle": "PackageReference",
+      "configFilePaths": [
+        "C:\\Users\\danil\\AppData\\Roaming\\NuGet\\NuGet.Config"
+      ],
+      "originalTargetFrameworks": [
+        "net8.0"
+      ],
+      "sources": {
+        "https://api.nuget.org/v3/index.json": {}
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "projectReferences": {}
+        }
+      },
+      "warningProperties": {
+        "warnAsError": [
+          "NU1605"
+        ]
+      }
+    },
+    "frameworks": {
+      "net8.0": {
+        "targetAlias": "net8.0",
+        "dependencies": {
+          "gstreamer-sharp-netcore": {
+            "target": "Package",
+            "version": "[0.0.8, )"
+          }
+        },
+        "imports": [
+          "net461",
+          "net462",
+          "net47",
+          "net471",
+          "net472",
+          "net48",
+          "net481"
+        ],
+        "assetTargetFallback": true,
+        "warn": true,
+        "frameworkReferences": {
+          "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          }
+        },
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.202/PortableRuntimeIdentifierGraph.json"
+      }
+    }
+  }
+}

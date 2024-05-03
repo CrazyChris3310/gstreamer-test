@@ -1,0 +1,45 @@
+﻿<!DOCTYPE html>
+<!--
+  vim: set sts=2 sw=2 et :
+
+
+  Demo Javascript app for negotiating and streaming a sendrecv webrtc stream
+  with a GStreamer app. Runs only in passive mode, i.e., responds to offers
+  with answers, exchanges ICE candidates, and streams.
+
+  Author: Nirbheek Chauhan <nirbheek@centricular.com>
+-->
+<html>
+<head>
+    <meta charset="utf-8" />
+    <style>
+
+        .error {
+            color: red;
+        }
+    </style>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script src="webrtc.js"></script>
+</head>
+<body>
+<!--    <div><video id="local_stream" autoplay playsinline>Your browser doesn't support video</video></div>-->
+    <div id="remote-streams"></div>
+<!--    <div><video id="screen_share" autoplay playsinline>Your browser doesn't support video</video></div>-->
+    <video id="local_stream" autoplay playsinline>Your browser doesn't support video</video>
+    <div>
+        Login: <input type="text" id="txtLogin" />
+        <input type="button" value="Start!" onclick="doConnect();" id="btnStart" />
+        <input type="button" value="Screen share" onclick="shareScreen()" id="shareScreeBtn">
+        <input type="button" value="Stop sharing screen" onclick="stopScreenShare()" id="stopScreenShare">
+    </div>
+    <div>
+        <textarea id="txtLog" cols="100" rows="10"></textarea>
+        <select id="lstUsers" size="10" multiple style="width: 100px;"></select>
+        <p>Passive: <span id="lblAwaitingCount"></span></p>
+    </div>
+    <div>
+        Message: <input type="text" id="txtMessage" />
+        <input type="button" value="Send" onclick="doSendChatMsg();" id="btnSend" />
+    </div>
+</body>
+</html>
