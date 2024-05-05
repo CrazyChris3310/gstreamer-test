@@ -169,23 +169,23 @@ public class Client : WebSocketBehavior
 
     public void TryPlayFlow(MediaFlow mediaFlow, int dest)
     {
-        if (mediaFlow.video != null)
+        if (mediaFlow is { video: not null, audio: not null })
         {
             mediaFlow.webrtcbin = CreateWebrtcBin(dest);
             _pipeline.Add(mediaFlow.webrtcbin);
-            // PlayFlow(mediaFlow.audio, mediaFlow.webrtcbin);
-            PlayFlow(mediaFlow.video, mediaFlow.webrtcbin);
+            PlayFlow(mediaFlow.video, mediaFlow.webrtcbin, "video");
+            PlayFlow(mediaFlow.audio, mediaFlow.webrtcbin, "audio");
             mediaFlow.webrtcbin.SetState(Gst.State.Playing);
         }
     }
 
-    private void PlayFlow(OutgoingFlow flow, Element werbtc)
+    private void PlayFlow(OutgoingFlow flow, Element werbtc, string type)
     {
         _pipeline.Add(flow.queue, flow.encoder, flow.payloader, flow.filter);
         Element.Link(flow.queue, flow.encoder, flow.payloader, flow.filter);
 
         var padLinkReturn = flow.srcPad.Link(flow.queue.GetStaticPad("sink"));
-        Console.WriteLine("Result of linking tee with encoder sink: " + padLinkReturn);
+        Console.WriteLine("Result of linking tee with queue sink: " + padLinkReturn + " type " + type);
         
         var sinkPadTemplate = werbtc.PadTemplateList.First(it => it.Name.Contains("sink"));
         var sinkPad = werbtc.RequestPad(sinkPadTemplate);
@@ -270,13 +270,13 @@ public class Client : WebSocketBehavior
         return ex;
     }
 
-    [DllImport("gstreamer-1.0-0.dll", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport("libgstreamer-1.0-0.dll", CallingConvention = CallingConvention.Cdecl)]
     static extern IntPtr gst_structure_get_value(IntPtr raw, IntPtr fieldname);
 
-    [DllImport("gobject-2.0-0.dll", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport("libgobject-2.0-0.dll", CallingConvention = CallingConvention.Cdecl)]
     static extern IntPtr g_value_get_pointer(IntPtr val);
 
-    [DllImport("gobject-2.0-0.dll", CallingConvention = CallingConvention.Cdecl)] 
+    [DllImport("libgobject-2.0-0.dll", CallingConvention = CallingConvention.Cdecl)] 
     static extern IntPtr g_value_get_boxed(IntPtr val);
 
     public static IntPtr GetStructRawValue(Structure structure, string fieldname)

@@ -53,20 +53,20 @@ class Program
                         var audioSrc = audioTee.RequestPad(audioSrcPadTemplate);
                         audioSrc.Link(audioSinkPad);
                         
-                        // foreach (var (id, peer) in _clients)
-                        // {
-                        //     if (id == client.id || peer.audioTee == null)
-                        //     {
-                        //         continue;
-                        //     }
-                        //
-                        //     var newPad = audioTee.RequestPad(audioSrcPadTemplate);
-                        //     peer.AddAudioPeer(newPad, client.id);
-                        //
-                        //     var otherPeerTee = peer.tee;
-                        //     var otherPeerPad = otherPeerTee.RequestPad(audioSrcPadTemplate);
-                        //     client.AddAudioPeer(otherPeerPad, id);
-                        // }
+                        foreach (var (id, peer) in _clients)
+                        {
+                            if (id == client.id || peer.audioTee == null)
+                            {
+                                continue;
+                            }
+                        
+                            var newPad = audioTee.RequestPad(audioSrcPadTemplate);
+                            peer.AddAudioPeer(newPad, client.id);
+                        
+                            var otherPeerTee = peer.audioTee;
+                            var otherPeerPad = otherPeerTee.RequestPad(audioSrcPadTemplate);
+                            client.AddAudioPeer(otherPeerPad, id); ;
+                        }
                     }
                     else
                     {
