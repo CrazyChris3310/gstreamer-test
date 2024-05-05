@@ -24,13 +24,12 @@ public class WebMsg
     public int dest;
     public SdpMsg sdp;
     public ChatMsg chat;
-    public ControlMsg control;
+    public String control;
 }
 
-public class ControlMsg
+public enum ControlMsg
 {
-    public bool authenticated;
-    public UserlistMsg userlist;
+    REMOVE_PEER
 }
 
 public class UserlistMsg

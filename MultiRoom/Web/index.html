@@ -17,6 +17,21 @@
         .error {
             color: red;
         }
+
+        .container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .videobox {
+            width: 20em;
+            height: 11.25em;
+            background-color: violet;
+            margin: 1em;
+            border: 0.2em solid black;
+            border-radius: 0.5em;
+        }
     </style>
 <!--    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>-->
     <script src="webrtc.js"></script>
@@ -24,8 +39,8 @@
 <body>
 <!--    <div><video id="local_stream" autoplay playsinline>Your browser doesn't support video</video></div>-->
 <!--    <div><video id="screen_share" autoplay playsinline>Your browser doesn't support video</video></div>-->
-    <video id="local_stream" autoplay playsinline>Your browser doesn't support video</video>
-    <div id="remote-streams"></div>
+    <video id="local_stream" class="videobox" autoplay playsinline>Your browser doesn't support video</video>
+    <div id="remote-streams" class="container"></div>
 <video autoplay playsinline id="test"></video>
     <div>
         Login: <input type="text" id="txtLogin" />

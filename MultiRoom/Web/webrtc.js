@@ -16,7 +16,13 @@ var default_peer_id;
 var rtc_configuration = {iceServers: [{urls: "stun:stun.services.mozilla.com"},
                                       {urls: "stun:stun.l.google.com:19302"}]};
 // The default constraints that will be attempted. Can be overriden by the user.
-var default_constraints = {video: true, audio: true};
+var default_constraints = {
+    video: {
+        width: 1280,
+        height: 720
+    },
+    audio: false
+};
 
 var connect_attempts = 0;
 var peer_connection;
@@ -79,6 +85,13 @@ function websocketServerConnect() {
             } else {
                 handleIncomingError("Unknown incoming JSON: " + msg);
             }
+        } else if (msg.control) {
+            if (msg.control === 'REMOVE_PEER') {
+                incoming[msg.dest].close();
+                delete incoming[msg.dest];
+                videoElements[msg.dest].remove();
+                delete videoElements[msg.dest];
+            }
         }
     };
     sck.onclose = function (event) {
@@ -97,13 +110,15 @@ function websocketServerConnect() {
 
     peer_connection = createPeer(-1);
     
-    navigator.mediaDevices.getUserMedia({ video: true })
+    navigator.mediaDevices.getUserMedia(default_constraints)
         .then(stream => {
-            localMediaStream = stream
-            document.querySelector("#local_stream").srcObject = localMediaStream;
+            localMediaStream = stream;
+            let video = document.querySelector("#local_stream");
+            video.srcObject = localMediaStream;
             localMediaStream.getTracks().forEach(track => {
                 senders.push(peer_connection.addTrack(track, localMediaStream));
             });
+            video.onloadedmetadata = () => console.log("Incoming video ratio is " + video.width + "x" + video.height);
         });
     
     function makeWsUrl(ep) {
@@ -188,8 +203,10 @@ function getOrCreateVideoElement(dest) {
         element = document.createElement("video");
         element.autoplay = true;
         element.playsInline = true;
+        element.classList.add("videobox");
         document.querySelector("#remote-streams").append(element);
     }
+    videoElements[dest] = element;
     return element;
 }
 

@@ -39,6 +39,7 @@ class Program
                 client.OnTrack += (srcPad, args) =>
                 {
                     var amount = ++clientsCount;
+                    Console.WriteLine("Current amount is " + amount);
                     var width = 640;
                     var height = 360;
                     var x = ((amount - 1) % 2) * width;
@@ -58,13 +59,9 @@ class Program
                     var toMixPad = clientSplitter.RequestPad(padTemplate);
                     toMixPad.Link(sinkPad);
                     
-                    // srcPad.Link(sinkPad);
-
-                    // var clientSplitter = client.tee;
-                    // var padTemplate = clientSplitter.PadTemplateList.First(it => it.Name.Contains("src"));
                     foreach (var (id, peer) in _clients)
                     {
-                        if (id == client.id)
+                        if (id == client.id || peer.tee == null)
                         {
                             continue;
                         }
@@ -75,12 +72,19 @@ class Program
                         var otherPeerPad = otherPeerTee.RequestPad(padTemplate);
                         client.AddPeer(otherPeerPad, id);
                     }
-                    // var tee = _pipeline.GetByName("splitter");
-
-                    // var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
-                    // var teePad = tee.RequestPad(padTemplate);
-                    // client.AddPeer(teePad, 10);
                 };
+                client.OnSocketClosed += () =>
+                {
+                    _clients.Remove(client.id);
+                    clientsCount--;
+                    foreach (var (id, peer) in _clients)
+                    {
+                        if (peer.tee == null) continue;
+                        var outgoingPeerPad = client.GetOutgoingPeerPad(id);
+                        peer.RemoveOutgoingPeer(client.id, outgoingPeerPad);
+                    }
+                };
+                
                 _clients[client.id] = client;
                 return client;
             });

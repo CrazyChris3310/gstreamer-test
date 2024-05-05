@@ -3,6 +3,7 @@ using System.Text;
 using GLib;
 using Gst;
 using Gst.Sdp;
+using Gst.Video;
 using Gst.WebRTC;
 using Newtonsoft.Json;
 using WebSocketSharp;
@@ -13,29 +14,49 @@ using Value = GLib.Value;
 
 namespace MultiRoom;
 
+public class IncomingFlow
+{
+    public Element webrtcbin;
+    public Element decodebin;
+    public Element queue;
+    public Element videoconvert;
+}
+
+public class OutgoingFlow
+{
+    public Element queue;
+    public Element encoder;
+    public Element payloader;
+    public Element filter;
+    public Element webrtcbin;
+}
+
 public class Client : WebSocketBehavior
 {
     public int id;
-    public Element tee;
     private Pipeline _pipeline;
+    
+    public Element? tee;
 
-    private Element incomingWebrtc;
+    private IncomingFlow incoming;
 
-    private Dictionary<int, Element> outgoingWebrtc = new();
-
-    private Element outgoingPeer;
+    private Dictionary<int, OutgoingFlow> outgoingFlows = new();
 
     public Action<Pad, GLib.SignalArgs> OnTrack;
+    public Action OnSocketClosed;
 
     public Client(Pipeline pipeline, int id)
     {
         _pipeline = pipeline;
         this.id = id;
-        incomingWebrtc = CreateWebrtcBin(-1);
-        _pipeline.Add(incomingWebrtc);
+        incoming = new IncomingFlow
+        {
+            webrtcbin = CreateWebrtcBin(-1)
+        };
+        _pipeline.Add(incoming.webrtcbin);
     }
 
-    private void OnIncomingDecodeBinStream(object o, GLib.SignalArgs args)
+    private void OnIncomingDecodeBinStream(object o, GLib.SignalArgs args, int dest)
     {
         var newPad = (Pad)args.Args[0];
         if (!newPad.HasCurrentCaps)
@@ -54,6 +75,9 @@ public class Client : WebSocketBehavior
             var q = ElementFactory.Make("queue");
             var conv = ElementFactory.Make("videoconvert");
             tee = ElementFactory.Make("tee");
+
+            incoming.queue = q;
+            incoming.videoconvert = conv;
 
             _pipeline.Add(q, conv, tee);
             q.Link(conv);
@@ -78,8 +102,16 @@ public class Client : WebSocketBehavior
         var rtppayload = ElementFactory.Make("rtpvp8pay");
         var filter = ElementFactory.Make("capsfilter");
         Util.SetObjectArg(filter, "caps", "application/x-rtp,media=video,encoding-name=VP8,payload=96");
-        
         var outgoing = CreateWebrtcBin(dest);
+
+        outgoingFlows[dest] = new OutgoingFlow()
+        {
+            queue = queue,
+            encoder = vp8enc,
+            payloader = rtppayload,
+            filter = filter,
+            webrtcbin = outgoing
+        };
         // outgoing.Connect("on-new-transceiver", (o, args) =>
         // {
         //     var transceiver = args.Args[0] as Object;
@@ -91,8 +123,6 @@ public class Client : WebSocketBehavior
         // outgoing.Emit("add-transceiver", WebRTCRTPTransceiverDirection.Sendonly,
         //     Caps.FromString("application/x-rtp,media=video,encoding-name=VP8/9000,payload=96")
         // );
-        outgoingWebrtc[dest] = outgoing;
-        // outgoingPeer = outgoing;
         
         _pipeline.Add(queue, vp8enc, rtppayload, filter, outgoing);
         Element.Link(queue, vp8enc, rtppayload, filter);
@@ -145,7 +175,8 @@ public class Client : WebSocketBehavior
             }
 
             var decodeBin = ElementFactory.Make("decodebin");
-            decodeBin.Connect("pad-added", OnIncomingDecodeBinStream);
+            incoming.decodebin = decodeBin;
+            decodeBin.Connect("pad-added", (o, args) => OnIncomingDecodeBinStream(o, args, dest));
 
             _pipeline.Add(decodeBin);
             var sinkPad = decodeBin.GetStaticPad("sink");
@@ -221,7 +252,7 @@ public class Client : WebSocketBehavior
             var gval = reply.GetValue("offer");
             WebRTCSessionDescription offer = (WebRTCSessionDescription)gval.Val;
             promise = new Promise();
-            var peer = dest == -1 ? incomingWebrtc : outgoingWebrtc[dest];
+            var peer = dest == -1 ? incoming.webrtcbin : outgoingFlows[dest].webrtcbin;
             peer.Emit("set-local-description", offer, promise);
             promise.Interrupt();
 
@@ -232,7 +263,7 @@ public class Client : WebSocketBehavior
 
     public void HandleIncomingSdp(SdpMsg msg, int dest)
     {
-        var peer = dest == -1 ? incomingWebrtc : outgoingWebrtc[dest];
+        var peer = dest == -1 ? incoming.webrtcbin : outgoingFlows[dest].webrtcbin;
         if (msg.sdp != null)
         {
             var sdp = msg.sdp;
@@ -323,17 +354,36 @@ public class Client : WebSocketBehavior
         }
     }
 
-    // protected override void OnOpen()
-    // {
-    //     _client._app.PushUserlist();
-    // }
-    //
-    // protected override void OnError(WebSocketSharp.ErrorEventArgs e)
-    // {
-    // }
-    //
-    // protected override void OnClose(CloseEventArgs e)
-    // {
-    //     _client._app.Disconnect(_client);
-    // }
+    public void RemoveOutgoingPeer(int index, Pad otherPeerFlow)
+    {
+        var outgoingFlow = outgoingFlows[index];
+        outgoingFlow.encoder.SetState(Gst.State.Null);
+        outgoingFlow.payloader.SetState(Gst.State.Null);
+        outgoingFlow.filter.SetState(Gst.State.Null);
+        outgoingFlow.webrtcbin.SetState(Gst.State.Null);
+        outgoingFlow.queue.SetState(Gst.State.Null);
+
+        var teeSrc = otherPeerFlow.Peer;
+        otherPeerFlow.Unlink(teeSrc);
+        tee.ReleaseRequestPad(teeSrc);
+        
+        _pipeline.Remove(outgoingFlow.queue, outgoingFlow.payloader, outgoingFlow.encoder, outgoingFlow.filter,
+            outgoingFlow.webrtcbin);
+
+        outgoingFlows.Remove(index);
+        
+        Send(new WebMsg() { control = ControlMsg.REMOVE_PEER.ToString(), dest = index });
+    }
+
+    public Pad GetOutgoingPeerPad(int index)
+    {
+        var outgoingFlow = outgoingFlows[index];
+        return outgoingFlow.queue.GetStaticPad("sink");
+    }
+    
+    protected override void OnClose(CloseEventArgs e)
+    {
+        Console.WriteLine("Closing socket");
+        OnSocketClosed();
+    }
 }

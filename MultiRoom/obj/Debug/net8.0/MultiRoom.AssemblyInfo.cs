@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MultiRoom")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8db748207bf5a07e36d8fc3454d5e8e485dc64e5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c48a61058f37b02bb063f40399a2320923e41b3c")]
 [assembly: System.Reflection.AssemblyProductAttribute("MultiRoom")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MultiRoom")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
