@@ -24,10 +24,18 @@ public class IncomingFlow
 
 public class OutgoingFlow
 {
+    public MediaType MediaType;
+    public Pad srcPad;
     public Element queue;
     public Element encoder;
     public Element payloader;
     public Element filter;
+}
+
+public class MediaFlow
+{
+    public OutgoingFlow? audio;
+    public OutgoingFlow? video;
     public Element webrtcbin;
 }
 
@@ -37,12 +45,13 @@ public class Client : WebSocketBehavior
     private Pipeline _pipeline;
     
     public Element? tee;
+    public Element? audioTee;
 
     private IncomingFlow incoming;
 
-    private Dictionary<int, OutgoingFlow> outgoingFlows = new();
+    private Dictionary<int, MediaFlow> outgoingFlows = new();
 
-    public Action<Pad, GLib.SignalArgs> OnTrack;
+    public Action<Pad, GLib.SignalArgs, MediaType> OnTrack;
     public Action OnSocketClosed;
 
     public Client(Pipeline pipeline, int id)
@@ -84,48 +93,62 @@ public class Client : WebSocketBehavior
             conv.Link(tee);
             newPad.Link(q.GetStaticPad("sink"));
             
-            OnTrack(conv.GetStaticPad("src"), args);
+            OnTrack(conv.GetStaticPad("src"), args, MediaType.VIDEO);
 
             q.SetState(Gst.State.Playing);
             conv.SetState(Gst.State.Playing);
             tee.SetState(Gst.State.Playing);
         }
+        else if (name.StartsWith("audio"))
+        {
+            var q = ElementFactory.Make("queue");
+            var conv = ElementFactory.Make("audioconvert");
+            var resample = ElementFactory.Make("audioresample");
+            audioTee = ElementFactory.Make("tee");
+            var fakeSink = ElementFactory.Make("fakesink");
+            
+            _pipeline.Add(q, conv, resample, audioTee, fakeSink);
+            Element.Link(q, conv, resample, audioTee);
+            newPad.Link(q.GetStaticPad("sink"));
+
+            var srcPad = audioTee.PadTemplateList.First(it => it.Name.Contains("src"));
+            var teeSrcPad = audioTee.RequestPad(srcPad);
+            teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
+
+            OnTrack(resample.GetStaticPad("src"), args, MediaType.AUDIO);
+            
+            _pipeline.SyncChildrenStates();
+            q.SetState(Gst.State.Playing);
+            conv.SetState(Gst.State.Playing);
+            resample.SetState(Gst.State.Playing);
+            audioTee.SetState(Gst.State.Playing);
+            fakeSink.SetState(Gst.State.Playing);
+        }
 
     }
 
-    public void AddPeer(Pad srcPad, int dest)
+    private OutgoingFlow CreatePeerFlow(Pad srcPad, int dest, string encName, string payName, string caps)
     {
-        // var source = ElementFactory.Make("videotestsrc");
-        // source.SetProperty("pattern", new Value(18));
         var queue = ElementFactory.Make("queue");
-        var vp8enc = ElementFactory.Make("vp8enc");
-        var rtppayload = ElementFactory.Make("rtpvp8pay");
+        var encoder = ElementFactory.Make(encName);
+        var payloader = ElementFactory.Make(payName);
         var filter = ElementFactory.Make("capsfilter");
-        Util.SetObjectArg(filter, "caps", "application/x-rtp,media=video,encoding-name=VP8,payload=96");
+        Util.SetObjectArg(filter, "caps", caps);
         var outgoing = CreateWebrtcBin(dest);
 
-        outgoingFlows[dest] = new OutgoingFlow()
+        var outgoingFlow = new OutgoingFlow()
         {
+            srcPad = srcPad,
             queue = queue,
-            encoder = vp8enc,
-            payloader = rtppayload,
-            filter = filter,
-            webrtcbin = outgoing
+            encoder = encoder,
+            payloader = payloader,
+            filter = filter
         };
-        // outgoing.Connect("on-new-transceiver", (o, args) =>
-        // {
-        //     var transceiver = args.Args[0] as Object;
-        //     Console.WriteLine($"transceiver added: direction={transceiver.GetProperty("direction").Val}, " +
-        //                       $"kind={transceiver.GetProperty("kind").Val}, " +
-        //                       $"mid={transceiver.GetProperty("mid").Val}, " +
-        //                       $"mlineindex={transceiver.GetProperty("mlineindex").Val}");
-        // });
-        // outgoing.Emit("add-transceiver", WebRTCRTPTransceiverDirection.Sendonly,
-        //     Caps.FromString("application/x-rtp,media=video,encoding-name=VP8/9000,payload=96")
-        // );
-        
-        _pipeline.Add(queue, vp8enc, rtppayload, filter, outgoing);
-        Element.Link(queue, vp8enc, rtppayload, filter);
+
+        return outgoingFlow;
+
+        _pipeline.Add(queue, encoder, payloader, filter, outgoing);
+        Element.Link(queue, encoder, payloader, filter);
 
         var padLinkReturn = srcPad.Link(queue.GetStaticPad("sink"));
         Console.WriteLine("Result of linking tee with encoder sink: " + padLinkReturn);
@@ -135,18 +158,66 @@ public class Client : WebSocketBehavior
         var linkReturn = filter.GetStaticPad("src").Link(sinkPad);
         Console.WriteLine("Result of linking filter with webrtc sink: " + linkReturn);
 
-        //
-        // _pipeline.Add(eleemnt);
-        // _pipeline.SyncChildrenStates();
-
         _pipeline.SyncChildrenStates();
 
-        // source.SetState(Gst.State.Playing);
-        vp8enc.SetState(Gst.State.Playing);
-        rtppayload.SetState(Gst.State.Playing);
+        encoder.SetState(Gst.State.Playing);
+        payloader.SetState(Gst.State.Playing);
         queue.SetState(Gst.State.Playing);
         filter.SetState(Gst.State.Playing);
         outgoing.SetState(Gst.State.Playing);
+    }
+
+    public void TryPlayFlow(MediaFlow mediaFlow, int dest)
+    {
+        if (mediaFlow.video != null)
+        {
+            mediaFlow.webrtcbin = CreateWebrtcBin(dest);
+            _pipeline.Add(mediaFlow.webrtcbin);
+            // PlayFlow(mediaFlow.audio, mediaFlow.webrtcbin);
+            PlayFlow(mediaFlow.video, mediaFlow.webrtcbin);
+            mediaFlow.webrtcbin.SetState(Gst.State.Playing);
+        }
+    }
+
+    private void PlayFlow(OutgoingFlow flow, Element werbtc)
+    {
+        _pipeline.Add(flow.queue, flow.encoder, flow.payloader, flow.filter);
+        Element.Link(flow.queue, flow.encoder, flow.payloader, flow.filter);
+
+        var padLinkReturn = flow.srcPad.Link(flow.queue.GetStaticPad("sink"));
+        Console.WriteLine("Result of linking tee with encoder sink: " + padLinkReturn);
+        
+        var sinkPadTemplate = werbtc.PadTemplateList.First(it => it.Name.Contains("sink"));
+        var sinkPad = werbtc.RequestPad(sinkPadTemplate);
+        var linkReturn = flow.filter.GetStaticPad("src").Link(sinkPad);
+        Console.WriteLine("Result of linking filter with webrtc sink: " + linkReturn);
+
+        _pipeline.SyncChildrenStates();
+
+        flow.encoder.SetState(Gst.State.Playing);
+        flow.payloader.SetState(Gst.State.Playing);
+        flow.queue.SetState(Gst.State.Playing);
+        flow.filter.SetState(Gst.State.Playing);
+    }
+
+    public void AddAudioPeer(Pad srcPad, int dest)
+    {
+        string caps = "application/x-rtp,media=audio,encoding-name=OPUS,payload=96";
+        var outgoingFlow = CreatePeerFlow(srcPad, dest, "opusenc", "rtpopuspay", caps);
+        var mediaFlow = outgoingFlows.GetValueOrDefault(dest, new MediaFlow());
+        mediaFlow.audio = outgoingFlow;
+        outgoingFlows[dest] = mediaFlow;
+        TryPlayFlow(mediaFlow, dest);
+    }
+
+    public void AddVideoPeer(Pad srcPad, int dest)
+    {
+        string caps = "application/x-rtp,media=video,encoding-name=VP8,payload=96";
+        var outgoingFlow = CreatePeerFlow(srcPad, dest, "vp8enc", "rtpvp8pay", caps);
+        var mediaFlow = outgoingFlows.GetValueOrDefault(dest, new MediaFlow());
+        mediaFlow.video = outgoingFlow;
+        outgoingFlows[dest] = mediaFlow;
+        TryPlayFlow(mediaFlow, dest);
     }
 
     private Element CreateWebrtcBin(int dest)
@@ -356,18 +427,21 @@ public class Client : WebSocketBehavior
 
     public void RemoveOutgoingPeer(int index, Pad otherPeerFlow)
     {
+        // todo: remove also audio
         var outgoingFlow = outgoingFlows[index];
-        outgoingFlow.encoder.SetState(Gst.State.Null);
-        outgoingFlow.payloader.SetState(Gst.State.Null);
-        outgoingFlow.filter.SetState(Gst.State.Null);
+        var video = outgoingFlow.video;
+        
+        video.encoder.SetState(Gst.State.Null);
+        video.payloader.SetState(Gst.State.Null);
+        video.filter.SetState(Gst.State.Null);
+        video.queue.SetState(Gst.State.Null);
         outgoingFlow.webrtcbin.SetState(Gst.State.Null);
-        outgoingFlow.queue.SetState(Gst.State.Null);
 
         var teeSrc = otherPeerFlow.Peer;
         otherPeerFlow.Unlink(teeSrc);
         tee.ReleaseRequestPad(teeSrc);
         
-        _pipeline.Remove(outgoingFlow.queue, outgoingFlow.payloader, outgoingFlow.encoder, outgoingFlow.filter,
+        _pipeline.Remove(video.queue, video.payloader, video.encoder, video.filter,
             outgoingFlow.webrtcbin);
 
         outgoingFlows.Remove(index);
@@ -377,7 +451,8 @@ public class Client : WebSocketBehavior
 
     public Pad GetOutgoingPeerPad(int index)
     {
-        var outgoingFlow = outgoingFlows[index];
+        // todo: only video
+        var outgoingFlow = outgoingFlows[index].video;
         return outgoingFlow.queue.GetStaticPad("sink");
     }
     

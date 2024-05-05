@@ -21,7 +21,7 @@ var default_constraints = {
         width: 1280,
         height: 720
     },
-    audio: false
+    audio: true
 };
 
 var connect_attempts = 0;

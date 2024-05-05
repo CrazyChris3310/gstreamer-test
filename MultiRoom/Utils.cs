@@ -42,3 +42,8 @@ public class ChatMsg
 {
     public string text;
 }
+
+public enum MediaType
+{
+    VIDEO, AUDIO
+}

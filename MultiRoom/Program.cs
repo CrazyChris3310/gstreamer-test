@@ -4,6 +4,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Nodes;
 using GLib;
 using Gst;
+using Gst.Audio;
 using WebSocketSharp;
 using WebSocketSharp.Server;
 using HttpStatusCode = WebSocketSharp.Net.HttpStatusCode;
@@ -36,41 +37,72 @@ class Program
             _httpServer.OnPost += (sender, ea) => this.OnWebPost(ea);
             _httpServer.AddWebSocketService("/sck", () => {
                 var client = new Client(_pipeline, Interlocked.Increment(ref _idCounter));
-                client.OnTrack += (srcPad, args) =>
+                ++clientsCount;
+                client.OnTrack += (srcPad, args, mediaType) =>
                 {
-                    var amount = ++clientsCount;
-                    Console.WriteLine("Current amount is " + amount);
-                    var width = 640;
-                    var height = 360;
-                    var x = ((amount - 1) % 2) * width;
-                    var y = ((amount - 1) / 2) * height;
-                    var mixer = _pipeline.GetByName("mixer");
-                    var sinkTemplate = mixer.PadTemplateList.First(it => it.Name.Contains("sink"));
-                    var sinkPad = mixer.RequestPad(sinkTemplate);
-
-                    sinkPad.SetProperty("xpos", new GLib.Value(x));
-                    sinkPad.SetProperty("ypos", new GLib.Value(y));
-                    sinkPad.SetProperty("width", new GLib.Value(width));
-                    sinkPad.SetProperty("height", new GLib.Value(height));
-                    
-                    var clientSplitter = client.tee;
-                    var padTemplate = clientSplitter.PadTemplateList.First(it => it.Name.Contains("src"));
-                    
-                    var toMixPad = clientSplitter.RequestPad(padTemplate);
-                    toMixPad.Link(sinkPad);
-                    
-                    foreach (var (id, peer) in _clients)
+                    var amount = clientsCount;
+                    if (mediaType == MediaType.AUDIO)
                     {
-                        if (id == client.id || peer.tee == null)
-                        {
-                            continue;
-                        }
-                        var newPad = clientSplitter.RequestPad(padTemplate);
-                        peer.AddPeer(newPad, client.id);
                         
-                        var otherPeerTee = peer.tee;
-                        var otherPeerPad = otherPeerTee.RequestPad(padTemplate);
-                        client.AddPeer(otherPeerPad, id);
+                        var audioMixer = _pipeline.GetByName("audiomixer");
+                        var template = audioMixer.PadTemplateList.First(it => it.Name.Contains("sink"));
+                        var audioSinkPad = audioMixer.RequestPad(template);
+                        
+                        var audioTee = client.audioTee;
+                        var audioSrcPadTemplate = audioTee.PadTemplateList.First(it => it.Name.Contains("src"));
+                        var audioSrc = audioTee.RequestPad(audioSrcPadTemplate);
+                        audioSrc.Link(audioSinkPad);
+                        
+                        // foreach (var (id, peer) in _clients)
+                        // {
+                        //     if (id == client.id || peer.audioTee == null)
+                        //     {
+                        //         continue;
+                        //     }
+                        //
+                        //     var newPad = audioTee.RequestPad(audioSrcPadTemplate);
+                        //     peer.AddAudioPeer(newPad, client.id);
+                        //
+                        //     var otherPeerTee = peer.tee;
+                        //     var otherPeerPad = otherPeerTee.RequestPad(audioSrcPadTemplate);
+                        //     client.AddAudioPeer(otherPeerPad, id);
+                        // }
+                    }
+                    else
+                    {
+                        var width = 640;
+                        var height = 360;
+                        var x = ((amount - 1) % 2) * width;
+                        var y = ((amount - 1) / 2) * height;
+                        var mixer = _pipeline.GetByName("mixer");
+                        var sinkTemplate = mixer.PadTemplateList.First(it => it.Name.Contains("sink"));
+                        var sinkPad = mixer.RequestPad(sinkTemplate);
+
+                        sinkPad.SetProperty("xpos", new GLib.Value(x));
+                        sinkPad.SetProperty("ypos", new GLib.Value(y));
+                        sinkPad.SetProperty("width", new GLib.Value(width));
+                        sinkPad.SetProperty("height", new GLib.Value(height));
+
+                        var clientSplitter = client.tee;
+                        var padTemplate = clientSplitter.PadTemplateList.First(it => it.Name.Contains("src"));
+
+                        var toMixPad = clientSplitter.RequestPad(padTemplate);
+                        toMixPad.Link(sinkPad);
+
+                        foreach (var (id, peer) in _clients)
+                        {
+                            if (id == client.id || peer.tee == null)
+                            {
+                                continue;
+                            }
+
+                            var newPad = clientSplitter.RequestPad(padTemplate);
+                            peer.AddVideoPeer(newPad, client.id);
+
+                            var otherPeerTee = peer.tee;
+                            var otherPeerPad = otherPeerTee.RequestPad(padTemplate);
+                            client.AddVideoPeer(otherPeerPad, id);
+                        }
                     }
                 };
                 client.OnSocketClosed += () =>
@@ -109,6 +141,18 @@ class Program
             var padTemplate = tee.PadTemplateList.First(it => it.Name.Contains("src"));
             var teePad = tee.RequestPad(padTemplate);
             teePad.Link(videoSink.GetStaticPad("sink"));
+            
+            var audioMixer = ElementFactory.Make("audiomixer", "audiomixer");
+            convert = ElementFactory.Make("audioconvert");
+            queue = ElementFactory.Make("queue");
+            var tee2 = ElementFactory.Make("tee");
+            var audiosink = ElementFactory.Make("autoaudiosink");
+            _pipeline.Add(audioMixer, convert, queue, audiosink);
+            Element.Link(audioMixer, convert, queue, audiosink);
+            
+            // padTemplate = tee2.PadTemplateList.First(it => it.Name.Contains("src"));
+            // var teePad2 = tee2.RequestPad(padTemplate);
+            // teePad2.Link(audiosink.GetStaticPad("sink"));
         }
 
         private void OnWebGet(HttpRequestEventArgs ea)
