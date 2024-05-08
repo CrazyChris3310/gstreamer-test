@@ -39,7 +39,20 @@
 <body>
 <!--    <div><video id="local_stream" autoplay playsinline>Your browser doesn't support video</video></div>-->
 <!--    <div><video id="screen_share" autoplay playsinline>Your browser doesn't support video</video></div>-->
-    <video id="local_stream" class="videobox" autoplay playsinline muted>Your browser doesn't support video</video>
+    <div id="local-plane">
+        <video id="local_stream" class="videobox" autoplay playsinline muted>Your browser doesn't support video</video>
+    </div>
+    <div id="selectors">
+        <div>
+            <label for="microphone-selector">Select micro:</label>
+            <select id ="microphone-selector"></select>
+        </div>
+        <div>
+            <label for="video-selector">Select cam:</label>
+            <select id="video-selector"></select>
+            <input type="button" value="Add stream" onclick="addNewStream()">
+        </div>
+    </div>
     <div id="remote-streams" class="container"></div>
 <video autoplay playsinline id="test"></video>
     <div>

@@ -38,17 +38,53 @@ let isConnected = false;
 
 let incoming = {}
 
+function showPicture(deviceId) {
+    console.log("Changed");
+    navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, deviceId: deviceId }, audio: false })
+        .then(stream => {
+            localMediaStream = stream;
+            let video = document.querySelector("#local_stream");
+            video.srcObject = localMediaStream;
+            console.log(stream.getTracks()[0].label);
+        });
 
-function websocketServerConnect() {
-    // setControlsSate(STATE_DISCONNECTED);
+}
 
-    // connect_attempts++;
-    // if (connect_attempts > 10) {
-    //     addMessage("Too many connection attempts, aborting. Refresh page to try again");
-    //     return;
-    // }
-    // addMessage("Connecting to server...");
+function addNewStream() {
+    let selector = document.querySelector("#video-selector");
+    let deviceId = selector.value;
+    
+    navigator.mediaDevices.getUserMedia({video: { width: 1280, height: 720, deviceId: deviceId }})
+        .then(stream => {
+            let localPlane = document.querySelector("#local-plane");
+            let video = document.createElement("video");
+            video.muted = true;
+            video.srcObject = stream;
+            video.playsInline = true;
+            video.autoplay = true;
+            video.classList.add("videobox")
+            localPlane.append(video);
+            peer_connection.addTrack(stream.getTracks()[0]);
+        })
+}
 
+function websocketServerConnect() {  
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+        console.log(devices);
+        let microSelect = document.querySelector("#microphone-selector");
+        let videoSelect = document.querySelector("#video-selector");
+        devices.forEach(device => {
+            let option = document.createElement("option");
+            option.value = device.deviceId;
+            option.innerHTML = device.label;
+            if (device.kind === 'audioinput') {
+                microSelect.append(option);
+            } else if (device.kind === 'videoinput') {
+                videoSelect.append(option);
+            }
+        });
+    })
+    
     sck = new WebSocket(makeWsUrl('/sck'));
     sck.onopen = (event) => {
         console.log("Connected to server");
@@ -118,7 +154,6 @@ function websocketServerConnect() {
             localMediaStream.getTracks().forEach(track => {
                 senders.push(peer_connection.addTrack(track, localMediaStream));
             });
-            video.onloadedmetadata = () => console.log("Incoming video ratio is " + video.width + "x" + video.height);
         });
     
     function makeWsUrl(ep) {
@@ -159,9 +194,9 @@ function createPeer(dest) {
 
     peer.onconnectionstatechange = ev => {
         console.log("Connection state of " + dest + " changed to " + peer_connection.connectionState);
-        // if (peer_connection.connectionState === 'connected') {
-        //     isConnected = true;
-        // }
+        if (peer_connection.connectionState === 'connected') {
+            isConnected = true;
+        }
     }
 
     peer.oniceconnectionstatechange = event => {
@@ -171,28 +206,41 @@ function createPeer(dest) {
     peer.onicecandidateerror = event =>
         console.error(JSON.stringify(event));
     
-    peer.ontrack += (event) => {
+    peer.ontrack = (event) => {
         let element = getOrCreateVideoElement(dest);
         if (element.srcObject !== event.streams[0]) {
             console.log('Incoming stream');
             element.srcObject = event.streams[0];
         }
     }
-
-    let settled = false;
-    const interval = setInterval(() => {
-        if (incoming[dest]) {
-            let remoteStream = incoming[dest].getRemoteStreams()[0];
-            let element = getOrCreateVideoElement(dest);
-            console.log('Incoming stream');
-            element.srcObject = remoteStream
-            settled = true;
+    
+    peer.onnegotiationneeded = () => {
+        if (isConnected) {
+            console.warn("Need renegotiation");
+            peer_connection.createOffer().then(offer => {
+                peer_connection.setLocalDescription(offer);
+                return offer;
+            }).then(offer => {
+                sck.send(JSON.stringify({ sdp: { 'sdp': offer }, dest: -1 }));
+            })
         }
+    }
+    
 
-        if (settled) {
-            clearInterval(interval);
-        }
-    }, 500);
+    // let settled = false;
+    // const interval = setInterval(() => {
+    //     if (incoming[dest]) {
+    //         let remoteStream = incoming[dest].getRemoteStreams()[0];
+    //         let element = getOrCreateVideoElement(dest);
+    //         console.log('Incoming stream');
+    //         element.srcObject = remoteStream
+    //         settled = true;
+    //     }
+    //
+    //     if (settled) {
+    //         clearInterval(interval);
+    //     }
+    // }, 500);
     
     return peer;
 }
@@ -225,7 +273,7 @@ function doConnect() {
 let isScreenShared = false;
 
 function stopScreenShare() {
-    document.querySelector("#screen_share").srcObject = null;
+    document.querySelector("#local_stream").srcObject = localMediaStream;
     senders.find(sender => sender.track.kind === 'video').replaceTrack(localMediaStream.getTracks().find(track => track.kind === 'video'));
 }
 function shareScreen() {
