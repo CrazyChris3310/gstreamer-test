@@ -7,16 +7,10 @@
  * Author: Nirbheek Chauhan <nirbheek@centricular.com>
  */
 
-// Set this to override the automatic detection in websocketServerConnect()
-var ws_server;
-var ws_port;
-// Set this to use a specific peer id instead of a random one
-var default_peer_id;
-// Override with your own STUN servers if you want
-var rtc_configuration = {iceServers: [{urls: "stun:stun.services.mozilla.com"},
+let rtc_configuration = {iceServers: [{urls: "stun:stun.services.mozilla.com"},
                                       {urls: "stun:stun.l.google.com:19302"}]};
-// The default constraints that will be attempted. Can be overriden by the user.
-var default_constraints = {
+
+let default_constraints = {
     video: {
         width: 1280,
         height: 720
@@ -24,19 +18,14 @@ var default_constraints = {
     audio: true
 };
 
-var connect_attempts = 0;
-var peer_connection;
-var send_channel;
-var sck;
-// Promise for local stream after constraints are approved by the user
-var local_stream_promise;
+let peer_connection;
+let sck;
 
-var localMediaStream;
-var senders = [];
-let videoElements = {};
+let localMediaStream;
 let isConnected = false;
 
 let incoming = {}
+let videoBlocks = {};
 
 function showPicture(deviceId) {
     console.log("Changed");
@@ -64,7 +53,7 @@ function addNewStream() {
             video.autoplay = true;
             video.classList.add("videobox")
             localPlane.append(video);
-            peer_connection.addTrack(stream.getTracks()[0]);
+            peer_connection.addTrack(stream.getTracks()[0], stream);
         })
 }
 
@@ -94,7 +83,7 @@ function websocketServerConnect() {
     };
     sck.onmessage = function (event) {
         console.log('received ' + event.data);
-        var msg = JSON.parse(event.data);
+        let msg = JSON.parse(event.data);
         if (msg.chat) {
             console.log("in chat: " + msg.chat.text);
         } else if (msg.sdp) {
@@ -112,7 +101,7 @@ function websocketServerConnect() {
                     }
                 })
             } else if (msg.sdp.ice != null) {
-                var candidate = new RTCIceCandidate(msg.sdp.ice);
+                let candidate = new RTCIceCandidate(msg.sdp.ice);
                 console.log("remote ice candidate received: " + JSON.stringify(msg.sdp.ice));
                 let connection = getOrCreatePeer(msg.dest);
                 connection.addIceCandidate(candidate)
@@ -125,12 +114,12 @@ function websocketServerConnect() {
             if (msg.control === 'REMOVE_PEER') {
                 incoming[msg.dest].close();
                 delete incoming[msg.dest];
-                videoElements[msg.dest].remove();
+                videoBlocks[msg.dest].block.remove();
                 delete videoElements[msg.dest];
             }
         }
     };
-    sck.onclose = function (event) {
+    sck.onclose = function () {
         console.warn('Disconnected from server');
 
         if (peer_connection) {
@@ -152,20 +141,19 @@ function websocketServerConnect() {
             let video = document.querySelector("#local_stream");
             video.srcObject = localMediaStream;
             localMediaStream.getTracks().forEach(track => {
-                senders.push(peer_connection.addTrack(track, localMediaStream));
+                peer_connection.addTrack(track, localMediaStream);
             });
         });
     
     function makeWsUrl(ep) {
-        var protocol = 'ws';
+        let protocol = 'ws';
         if (window.location.protocol.startsWith('https'))
             protocol = 'wss';
 
-        var host = window.location.hostname;
-        var port = window.location.port || (protocol == 'wss' ? 443 : 80);
+        let host = window.location.hostname;
+        let port = window.location.port || (protocol === 'wss' ? 443 : 80);
 
-        var wsUrl = protocol + '://' + host + ':' + port + (ep.startsWith('/') ? ep : ('/' + ep));
-        return wsUrl;
+        return protocol + '://' + host + ':' + port + (ep.startsWith('/') ? ep : ('/' + ep));
     }
 }
 
@@ -207,7 +195,8 @@ function createPeer(dest) {
         console.error(JSON.stringify(event));
     
     peer.ontrack = (event) => {
-        let element = getOrCreateVideoElement(dest);
+        let element = getOrCreateBlockElement(dest, event.streams[0].id);
+        
         if (element.srcObject !== event.streams[0]) {
             console.log('Incoming stream');
             element.srcObject = event.streams[0];
@@ -226,35 +215,31 @@ function createPeer(dest) {
         }
     }
     
-
-    // let settled = false;
-    // const interval = setInterval(() => {
-    //     if (incoming[dest]) {
-    //         let remoteStream = incoming[dest].getRemoteStreams()[0];
-    //         let element = getOrCreateVideoElement(dest);
-    //         console.log('Incoming stream');
-    //         element.srcObject = remoteStream
-    //         settled = true;
-    //     }
-    //
-    //     if (settled) {
-    //         clearInterval(interval);
-    //     }
-    // }, 500);
-    
     return peer;
 }
 
-function getOrCreateVideoElement(dest) {
-    let element = videoElements[dest];
+function getOrCreateVideoBlock(dest) {
+    let block = videoBlocks[dest];
+    if (block == null) {
+        block = document.createElement("div");
+        block.classList.add("block");
+        document.querySelector("#remote-streams").append(block);
+        videoBlocks[dest] = { userId: dest, block: block, elements: {} }
+    }
+    return block;
+}
+
+function getOrCreateBlockElement(dest, streamId) {
+    let block = getOrCreateVideoBlock(dest);
+    let element = block.elements[streamId]
     if (element == null) {
         element = document.createElement("video");
-        element.autoplay = true;
         element.playsInline = true;
-        element.classList.add("videobox");
-        document.querySelector("#remote-streams").append(element);
+        element.autoplay = true;
+        element.classList.add("videobox")
+        block.block.append(element);
+        block.elements[streamId] = { streamId: streamId, element: element };
     }
-    videoElements[dest] = element;
     return element;
 }
 
@@ -274,20 +259,21 @@ let isScreenShared = false;
 
 function stopScreenShare() {
     document.querySelector("#local_stream").srcObject = localMediaStream;
-    senders.find(sender => sender.track.kind === 'video').replaceTrack(localMediaStream.getTracks().find(track => track.kind === 'video'));
+    // senders.find(sender => sender.track.kind === 'video').replaceTrack(localMediaStream.getTracks().find(track => track.kind === 'video'));
 }
 function shareScreen() {
     navigator.mediaDevices.getDisplayMedia({ cursor: true }).then(stream => {
-        // document.querySelector("#screen_share").srcObject = stream;
         let screenTrack = stream.getTracks()[0];
-        // peer_connection.addTrack(screenTrack);
-        senders.find(sender => sender.track.kind === 'video').replaceTrack(screenTrack);
-        isScreenShared = true;
-        screenTrack.onended = () => {
-            // peer_connection.removeTrack(screenTrack);
-            console.log("Removed screen share track from peer connection");
-            senders.find(sender => sender.track.kind === 'video').replaceTrack(localMediaStream.getTracks().find(track => track.kind === 'video'));
-        }
+
+        let localPlane = document.querySelector("#local-plane");
+        let video = document.createElement("video");
+        video.muted = true;
+        video.srcObject = stream;
+        video.playsInline = true;
+        video.autoplay = true;
+        video.classList.add("videobox")
+        localPlane.append(video);
+        peer_connection.addTrack(screenTrack, stream);
     })
 }
 

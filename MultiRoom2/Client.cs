@@ -42,9 +42,9 @@ public class OutgoingFlow : Flow
 
 public class MediaFlow<T>
 {
-    public T? audio;
-    public T? video;
-    // public List<T> tracks;
+//     public T? audio;
+//     public T? video;
+    public List<T> tracks = [];
     public Element webrtcbin;
 }
 
@@ -79,7 +79,8 @@ public class Client : WebSocketBehavior
             {
                 continue;
             }
-            outgoingFlows[otherClient.id] = new MediaFlow<OutgoingFlow>();
+            outgoingFlows[otherClient.id] = new MediaFlow<OutgoingFlow>() { webrtcbin = CreateWebrtcBin(otherClient.id) };
+            _pipeline.Add(outgoingFlows[otherClient.id].webrtcbin);
         }
     }
 
@@ -103,10 +104,10 @@ public class Client : WebSocketBehavior
         {
             var q = ElementFactory.Make("queue");
             var conv = ElementFactory.Make("videoconvert");
-            var fakeSink = ElementFactory.Make("autovideosink");
+            var fakeSink = ElementFactory.Make("fakesink");
             var tee = ElementFactory.Make("tee");
 
-            incoming.video = new IncomingFlow()
+            var incomingTrack = new IncomingFlow()
             {
                 streamId = streamId,
                 mediaType = MediaType.VIDEO,
@@ -116,6 +117,7 @@ public class Client : WebSocketBehavior
                 fakesink = fakeSink,
                 tee = tee
             };
+            incoming.tracks.Add(incomingTrack);
 
             _pipeline.Add(q, conv, tee, fakeSink);
             q.Link(conv);
@@ -125,7 +127,7 @@ public class Client : WebSocketBehavior
             var srcPad = tee.PadTemplateList.First(it => it.Name.Contains("src"));
             var teeSrcPad = tee.RequestPad(srcPad);
             teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
-            Broadcast(incoming.video);
+            Broadcast(incomingTrack);
 
             q.SetState(Gst.State.Playing);
             conv.SetState(Gst.State.Playing);
@@ -140,7 +142,7 @@ public class Client : WebSocketBehavior
             var fakeSink = ElementFactory.Make("fakesink");
             var audioTee = ElementFactory.Make("tee");
 
-            incoming.audio = new IncomingFlow()
+            var incomingTrack = new IncomingFlow()
             {
                 streamId = streamId,
                 mediaType = MediaType.AUDIO,
@@ -151,6 +153,7 @@ public class Client : WebSocketBehavior
                 tee = audioTee
                 // resample = resample,
             };
+            incoming.tracks.Add(incomingTrack);
             
             _pipeline.Add(q, conv, resample, audioTee, fakeSink);
             Element.Link(q, conv, resample, audioTee);
@@ -160,7 +163,7 @@ public class Client : WebSocketBehavior
             var teeSrcPad = audioTee.RequestPad(srcPad);
             teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
 
-            Broadcast(incoming.audio);
+            Broadcast(incomingTrack);
             
             _pipeline.SyncChildrenStates();
             q.SetState(Gst.State.Playing);
@@ -185,25 +188,31 @@ public class Client : WebSocketBehavior
         {
             int retries = 10;
             
-            while ((incoming.audio == null || incoming.video == null) && retries > 0)
-            {
-                retries--;
-                Thread.Sleep(500);
-            }
+            // while ((incoming.audio == null || incoming.video == null) && retries > 0)
+            // {
+            //     retries--;
+            //     Thread.Sleep(500);
+            // }
+            //
+            // if (retries <= 0)
+            // {
+            //     // throw new Exception("Can't get incoming media from client " + id);
+            //     Console.WriteLine("Can't get incoming media from client " + id);
+            //     return;
+            // }
 
-            if (retries <= 0)
-            {
-                // throw new Exception("Can't get incoming media from client " + id);
-                Console.WriteLine("Can't get incoming media from client " + id);
-                return;
-            }
+            var outgoingFlow = new MediaFlow<OutgoingFlow>() { webrtcbin = CreateWebrtcBin(clientId)};
+            _pipeline.Add(outgoingFlow.webrtcbin);
 
-            var outgoingFlow = new MediaFlow<OutgoingFlow>();
             outgoingFlows[clientId] = outgoingFlow;
 
-            // todo: can still have no media
-            AddStream(incoming.audio!, clientId, outgoingFlow);
-            AddStream(incoming.video!, clientId, outgoingFlow);
+            foreach (var track in incoming.tracks)
+            {
+                AddStream(track, clientId, outgoingFlow);
+            }
+
+            // AddStream(incoming.audio!, clientId, outgoingFlow);
+            // AddStream(incoming.video!, clientId, outgoingFlow);
         }).Start();
     }
 
@@ -241,16 +250,19 @@ public class Client : WebSocketBehavior
         return outgoingFlow;
     }
 
-    public void TryPlayFlow(MediaFlow<OutgoingFlow> mediaFlow, int dest)
+    public void TryPlayFlow(MediaFlow<OutgoingFlow> mediaFlow, int dest, OutgoingFlow outgoingFlow)
     {
-        if (mediaFlow is { video: not null, audio:not null})
-        {
-            mediaFlow.webrtcbin = CreateWebrtcBin(dest);
-            _pipeline.Add(mediaFlow.webrtcbin);
-            PlayFlow(mediaFlow.video, mediaFlow.webrtcbin);
-            PlayFlow(mediaFlow.audio, mediaFlow.webrtcbin);
-            mediaFlow.webrtcbin.SetState(Gst.State.Playing);
-        }
+        PlayFlow(outgoingFlow, mediaFlow.webrtcbin);
+        mediaFlow.webrtcbin.SetState(Gst.State.Playing);
+
+        // if (mediaFlow is { video: not null, audio:not null})
+        // {
+        //     mediaFlow.webrtcbin = CreateWebrtcBin(dest);
+        //     _pipeline.Add(mediaFlow.webrtcbin);
+        //     PlayFlow(mediaFlow.video, mediaFlow.webrtcbin);
+        //     PlayFlow(mediaFlow.audio, mediaFlow.webrtcbin);
+        //     mediaFlow.webrtcbin.SetState(Gst.State.Playing);
+        // }
     }
     
     private void PlayFlow(OutgoingFlow flow, Element werbtc)
@@ -280,8 +292,8 @@ public class Client : WebSocketBehavior
         string caps = "application/x-rtp,media=audio,encoding-name=OPUS,payload=96";
         var outgoingFlow = CreatePeerFlow(srcPad, dest, "opusenc", "rtpopuspay", caps);
         outgoingFlow.streamId = streamId;
-        mediaFlow.audio = outgoingFlow;
-        TryPlayFlow(mediaFlow, dest);
+        mediaFlow.tracks.Add(outgoingFlow);
+        TryPlayFlow(mediaFlow, dest, outgoingFlow);
     }
 
     public void AddVideoStream(Pad srcPad, int dest, MediaFlow<OutgoingFlow> mediaFlow, string streamId)
@@ -289,8 +301,8 @@ public class Client : WebSocketBehavior
         string caps = "application/x-rtp,media=video,encoding-name=VP8,payload=96";
         var outgoingFlow = CreatePeerFlow(srcPad, dest, "vp8enc", "rtpvp8pay", caps);
         outgoingFlow.streamId = streamId;
-        mediaFlow.video = outgoingFlow;
-        TryPlayFlow(mediaFlow, dest);
+        mediaFlow.tracks.Add(outgoingFlow);
+        TryPlayFlow(mediaFlow, dest, outgoingFlow);
     }
 
     private Element CreateWebrtcBin(int dest)
@@ -380,7 +392,7 @@ public class Client : WebSocketBehavior
 
     private void OnNegotiationNeeded(object o, GLib.SignalArgs args, int dest)
     {
-        Console.WriteLine("Renegotiation needed event fired");
+        Console.WriteLine("Renegotiation needed event fired from " + id + " to " + dest);
         var webRtc = o as Element;
         Assert(webRtc != null, "not a webrtc object");
 
@@ -545,24 +557,14 @@ public class Client : WebSocketBehavior
 
         outgoingFlows.Remove(clientId);
 
-        if (flow.video != null)
+        foreach (var track in flow.tracks)
         {
-            flow.video.encoder.SetState(Gst.State.Null);
-            flow.video.payloader.SetState(Gst.State.Null);
-            flow.video.filter.SetState(Gst.State.Null);
-            flow.video.queue.SetState(Gst.State.Null);
+            track.encoder.SetState(Gst.State.Null);
+            track.payloader.SetState(Gst.State.Null);
+            track.filter.SetState(Gst.State.Null);
+            track.queue.SetState(Gst.State.Null);
 
-            _pipeline.Remove(flow.video.encoder, flow.video.payloader, flow.video.filter, flow.video.queue);
-        }
-
-        if (flow.audio != null)
-        {
-            flow.audio.encoder.SetState(Gst.State.Null);
-            flow.audio.payloader.SetState(Gst.State.Null);
-            flow.audio.filter.SetState(Gst.State.Null);
-            flow.audio.queue.SetState(Gst.State.Null);
-            
-            _pipeline.Remove(flow.audio.encoder, flow.audio.payloader, flow.audio.filter, flow.audio.queue);
+            _pipeline.Remove(track.encoder, track.payloader, track.filter, track.queue);
         }
 
         _pipeline.Remove(flow.webrtcbin);
@@ -577,44 +579,29 @@ public class Client : WebSocketBehavior
         foreach (var (clientId, flow) in outgoingFlows)
         {
             flow.webrtcbin.SetState(Gst.State.Null);
-            if (flow.video != null)
+            foreach (var track in flow.tracks)
             {
-                flow.video.encoder.SetState(Gst.State.Null);
-                flow.video.payloader.SetState(Gst.State.Null);
-                flow.video.filter.SetState(Gst.State.Null);
-                flow.video.queue.SetState(Gst.State.Null);
-            }
+                track.encoder.SetState(Gst.State.Null);
+                track.payloader.SetState(Gst.State.Null);
+                track.filter.SetState(Gst.State.Null);
+                track.queue.SetState(Gst.State.Null);
 
-            if (flow.audio != null)
-            {
-                flow.audio.encoder.SetState(Gst.State.Null);
-                flow.audio.payloader.SetState(Gst.State.Null);
-                flow.audio.filter.SetState(Gst.State.Null);
-                flow.audio.queue.SetState(Gst.State.Null);
+                _pipeline.Remove(track.encoder, track.payloader, track.filter, track.queue);
             }
 
             onoffercreated(clientId, new WebMsg() { control = ControlMsg.REMOVE_PEER.ToString(), dest = id });
         }
 
-        if (incoming.video != null)
+        incoming.webrtcbin.SetState(Gst.State.Null);
+        foreach (var track in incoming.tracks)
         {
-            incoming.webrtcbin.SetState(Gst.State.Null);
-            incoming.video.queue.SetState(Gst.State.Null);
-            incoming.video.converter.SetState(Gst.State.Null);
-            incoming.video.decodebin.SetState(Gst.State.Null);
-            incoming.video.tee.SetState(Gst.State.Null);
-            incoming.video.fakesink.SetState(Gst.State.Null);
+            track.queue.SetState(Gst.State.Null);
+            track.converter.SetState(Gst.State.Null);
+            track.decodebin.SetState(Gst.State.Null);
+            track.tee.SetState(Gst.State.Null);
+            track.fakesink.SetState(Gst.State.Null);
         }
-
-        if (incoming.audio != null)
-        {
-            incoming.audio.queue.SetState(Gst.State.Null);
-            incoming.audio.converter.SetState(Gst.State.Null);
-            incoming.audio.decodebin.SetState(Gst.State.Null);
-            incoming.audio.tee.SetState(Gst.State.Null);
-            incoming.audio.fakesink.SetState(Gst.State.Null);
-        }
-
+        
         _pipeline.Remove();
         _pipeline.Dispose();
 
