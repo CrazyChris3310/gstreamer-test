@@ -1,0 +1,93 @@
+.error {
+    color: red;
+}
+
+.container {
+    display: flex;
+    justify-content: flex-start;
+    overflow: auto;
+}
+
+.block {
+    border: black solid 0.2em;
+    border-radius: 0.5em;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin: 0.5em;
+    padding: 0.3em;
+    background-color: rgb(53, 53, 53);
+}
+
+.name {
+    width: 100%;
+    text-align: center;
+    font-family: Arial, Helvetica, sans-serif;
+    color: white;
+}
+
+.media {
+    display: flex;
+    justify-content: center;
+}
+
+.videobox {
+    width: 9em;
+    height: 5.062em;
+    background-color: black;
+    margin: 0.2em;
+    border: 0.13em solid rgb(100, 100, 100);
+    border-radius: 0.5em;
+    cursor: pointer;
+}
+
+.main-page {
+    display: flex;
+    align-items: stretch;
+}
+
+.viewport-window {
+    width: 80%;
+}
+
+.viewport {
+    width: 100%;
+    background-color: black;
+}
+
+.chat {
+    margin-left: 0.5em;
+    width: 20%;
+    background-color: gainsboro;
+    overflow: auto;
+}
+
+body {
+    background-color: white;
+}
+
+.modal {
+    position: absolute;
+    left: 50%;
+    top: 15em;
+    transform: translate(-50%);
+    /* color: red; */
+    width: 30em;
+    height: 20em;
+    background-color: white;
+    border: 0.2em solid black;
+    visibility: hidden; 
+}
+
+#local-preview {
+    width: 20em;
+    height: 11.25em;
+    margin: 1em;
+    background-color: black;
+    display: inline-block;
+}
+
+.device-selectors {
+    display: inline-block;
+    margin: 0 1em 1em 1em;
+}

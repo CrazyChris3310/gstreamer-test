@@ -24,12 +24,19 @@ public class WebMsg
     public int dest;
     public SdpMsg sdp;
     public ChatMsg chat;
-    public String control;
+    public ControlMsg control;
 }
 
-public enum ControlMsg
+public enum ControlMsgType
 {
-    REMOVE_PEER
+    REMOVE_PEER,
+    REMOVE_STREAM
+}
+
+public class ControlMsg
+{
+    public ControlMsgType type;
+    public string streamId;
 }
 
 public class UserlistMsg

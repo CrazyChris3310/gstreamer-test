@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ObjectiveC;
 using System.Text;
 using GLib;
 using Gst;
@@ -33,6 +34,7 @@ public class IncomingFlow : Flow
 
 public class OutgoingFlow : Flow
 {
+    public IncomingFlow IncomingFlow;
     public Pad srcPad;
     public Element queue;
     public Element encoder;
@@ -55,9 +57,10 @@ public class Client : WebSocketBehavior
 
     private MediaFlow<IncomingFlow> incoming;
     private Dictionary<int, MediaFlow<OutgoingFlow>> outgoingFlows = new();
-    
+    private Thread? messageLoopThread = null;
+
     public Action OnSocketClosed;
-    public Action<int, WebMsg> onoffercreated;
+    public Action<int, WebMsg> SendMessage;
     public Action<int, SdpMsg> readressSdp;
     public Action<int> OnStreamingStart;
 
@@ -65,12 +68,13 @@ public class Client : WebSocketBehavior
 
     public Client(int id, List<Client> otherClients)
     {
-        _pipeline = new Pipeline();
         this.id = id;
         incoming = new MediaFlow<IncomingFlow>()
         {
             webrtcbin = CreateWebrtcBin(-1)
         };
+        _pipeline = new Pipeline();
+        _pipeline.Bus.AddWatch(messageLoop);
         _pipeline.Add(incoming.webrtcbin);
         
         foreach (var otherClient in otherClients)
@@ -187,19 +191,6 @@ public class Client : WebSocketBehavior
         new Thread(() =>
         {
             int retries = 10;
-            
-            // while ((incoming.audio == null || incoming.video == null) && retries > 0)
-            // {
-            //     retries--;
-            //     Thread.Sleep(500);
-            // }
-            //
-            // if (retries <= 0)
-            // {
-            //     // throw new Exception("Can't get incoming media from client " + id);
-            //     Console.WriteLine("Can't get incoming media from client " + id);
-            //     return;
-            // }
 
             var outgoingFlow = new MediaFlow<OutgoingFlow>() { webrtcbin = CreateWebrtcBin(clientId)};
             _pipeline.Add(outgoingFlow.webrtcbin);
@@ -211,8 +202,6 @@ public class Client : WebSocketBehavior
                 AddStream(track, clientId, outgoingFlow);
             }
 
-            // AddStream(incoming.audio!, clientId, outgoingFlow);
-            // AddStream(incoming.video!, clientId, outgoingFlow);
         }).Start();
     }
 
@@ -335,6 +324,8 @@ public class Client : WebSocketBehavior
             
             var decodeBin = ElementFactory.Make("decodebin");
             decodeBin.Connect("pad-added", (o, args) => OnIncomingDecodeBinStream(o, args, streamId));
+            
+            newPad.AddProbe(PadProbeType.EventDownstream, (pad, info) => EventProbeCallback(pad, info, streamId));
 
             _pipeline.Add(decodeBin);
             var sinkPad = decodeBin.GetStaticPad("sink");
@@ -342,12 +333,59 @@ public class Client : WebSocketBehavior
             decodeBin.SyncStateWithParent();
             Console.WriteLine("Pad link result: " + padLinkReturn);
         }); 
-        
+        webrtc.Connect("pad-removed", (o, args) =>
+        {
+            Console.WriteLine($"Removed pad from {id} to {dest}");
+        });
         webrtc.Connect("on-ice-candidate", (o, args) => OnIceCandidate(o, args, dest));
         
         return webrtc;
     }
 
+    private void RemoveStream(string streamId)
+    {
+        foreach (var (peerId, flow) in outgoingFlows)
+        {
+            // flow.webrtcbin.SetState(Gst.State.Null);
+            // foreach (var track in flow.tracks)
+            // {
+            //     if (track.streamId != streamId) continue;
+            //     track.queue.SetState(Gst.State.Null);
+            //     track.encoder.SetState(Gst.State.Null);
+            //     track.payloader.SetState(Gst.State.Null);
+            //     track.filter.SetState(Gst.State.Null);
+            //
+            //     var tee = track.srcPad.ParentElement;
+            //     tee.Unlink(track.queue);
+            //     tee.ReleaseRequestPad(track.srcPad.Peer);
+            //     
+            //     track.filter.Unlink(flow.webrtcbin);
+            //     flow.webrtcbin.ReleaseRequestPad(track.filter.GetStaticPad("src").Peer);
+            //
+            //     _pipeline.Remove(track.queue, track.encoder, track.payloader, track.filter);
+            // }
+            // flow.tracks = flow.tracks.Where(it => it.streamId != streamId).ToList();
+            // flow.webrtcbin.SetState(Gst.State.Playing);
+            
+            SendMessage(peerId,
+                new WebMsg()
+                    { dest = id, control = new ControlMsg() { type = ControlMsgType.REMOVE_STREAM, streamId = streamId } });
+        }
+    }
+
+    private PadProbeReturn EventProbeCallback(Pad pad, PadProbeInfo info, string streamId)
+    {
+        if (info.Event.Type != EventType.Eos)
+            return PadProbeReturn.Ok;
+        
+        pad.RemoveProbe(info.Id);
+        
+        Console.WriteLine("EOS event received on client " + id);
+        RemoveStream(streamId);
+        
+        return PadProbeReturn.Drop;
+    }
+    
     static GException GetGError(Structure structure)
     {
         var value = GetStructRawValue(structure, "error");
@@ -386,7 +424,7 @@ public class Client : WebSocketBehavior
         }
         else
         {
-            onoffercreated(dest, new WebMsg() { sdp = iceMsg, src = id, dest = id });
+            SendMessage(dest, new WebMsg() { sdp = iceMsg, src = id, dest = id });
         }
     }
 
@@ -425,7 +463,7 @@ public class Client : WebSocketBehavior
             {
                 Send(new WebMsg() { sdp = sdpMsg, src = id, dest = dest });
             } else {
-                onoffercreated(dest, new WebMsg() { sdp = sdpMsg, src = id, dest = id });
+                SendMessage(dest, new WebMsg() { sdp = sdpMsg, src = id, dest = id });
             }
         }
     }
@@ -437,7 +475,7 @@ public class Client : WebSocketBehavior
         {
             var sdp = msg.sdp;
             string sdpMessage = sdp.sdp;
-            Console.WriteLine($"received sdp:\n{sdpMessage}");
+            Console.WriteLine($"received sdp");
             SDPMessage.New(out SDPMessage sdpMsg);
             SDPMessage.ParseBuffer(ASCIIEncoding.Default.GetBytes(sdpMessage), (uint)sdpMessage.Length, sdpMsg);
             var remoteDescription = WebRTCSessionDescription.New(sdp.type == "offer" ? WebRTCSDPType.Offer : WebRTCSDPType.Answer, sdpMsg);
@@ -474,7 +512,7 @@ public class Client : WebSocketBehavior
                                 }
                                 else
                                 {
-                                    onoffercreated(dest, new WebMsg() { sdp = sdpMsg2, dest = id });
+                                    SendMessage(dest, new WebMsg() { sdp = sdpMsg2, dest = id });
                                 }
                             }
                         });
@@ -519,6 +557,18 @@ public class Client : WebSocketBehavior
                     isStreaming = true;
                     OnStreamingStart(id);
                     _pipeline.SetState(Gst.State.Playing);
+                    if (messageLoopThread == null)
+                    {
+                        messageLoopThread = new Thread(() =>
+                        {
+                            while (true)
+                            {
+                                
+                            }
+                        });
+                        messageLoopThread.IsBackground = true;
+                        messageLoopThread.Start();
+                    }
                 } 
             }
             else
@@ -528,6 +578,12 @@ public class Client : WebSocketBehavior
                 {
                     //_client.InitiateAudioLink(msg.sdp);
                     HandleIncomingSdp(msg.sdp, msg.dest);
+                } else if (msg.control != null)
+                {
+                    if (msg.control.type == ControlMsgType.REMOVE_STREAM)
+                    {
+                        // RemoveStream(msg.control.streamId);
+                    }
                 }
             }
         }
@@ -589,7 +645,7 @@ public class Client : WebSocketBehavior
                 _pipeline.Remove(track.encoder, track.payloader, track.filter, track.queue);
             }
 
-            onoffercreated(clientId, new WebMsg() { control = ControlMsg.REMOVE_PEER.ToString(), dest = id });
+            SendMessage(clientId, new WebMsg() { control = new ControlMsg() { type = ControlMsgType.REMOVE_PEER }, dest = id });
         }
 
         incoming.webrtcbin.SetState(Gst.State.Null);
@@ -613,5 +669,47 @@ public class Client : WebSocketBehavior
         Console.WriteLine("Closing socket");
         RemoveOutgoingPeers();
         OnSocketClosed();
+        // messageLoopThread!.Interrupt();
+    }
+
+    private bool messageLoop(Bus bus, Message msg)
+    {
+        string debug;
+        GLib.GException exc;
+        switch (msg.Type)
+        {
+            case MessageType.Error:
+                msg.ParseError(out exc, out debug);
+                Console.WriteLine("Error received from element {0}: {1}", msg.Src.Name, exc.Message);
+                Console.WriteLine("Error Debugging information: {0}", debug != null ? debug : "none");
+                break;
+            case MessageType.Warning:
+                msg.ParseError(out exc, out debug);
+                Console.WriteLine("Warning received from element {0}: {1}", msg.Src.Name, exc.Message);
+                Console.WriteLine("Warning Debugging information: {0}", debug != null ? debug : "none");
+                break;
+            case MessageType.Eos:
+                Console.WriteLine("End-Of-Stream reached.\n");
+                break;
+            case MessageType.StateChanged:
+                // We are only interested in state-changed messages from the pipeline
+                if (msg.Src == _pipeline)
+                {
+                    State oldState, newState, pendingState;
+                    msg.ParseStateChanged(out oldState, out newState, out pendingState);
+                    Console.WriteLine("Pipeline state changed from {0} to {1}:",
+                        Element.StateGetName(oldState), Element.StateGetName(newState));
+                }
+                break;
+            case MessageType.Latency:
+                _pipeline.RecalculateLatency();
+                break;
+            default:
+                // We should not reach here because we only asked for ERRORs, EOS and STATE_CHANGED
+                // Console.WriteLine("Unexpected message received.");
+                break;
+        }
+
+        return true;
     }
 }

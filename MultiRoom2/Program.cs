@@ -34,7 +34,7 @@ class Program
             _httpServer.AddWebSocketService("/sck", () =>
             {
                 var client = new Client( Interlocked.Increment(ref _idCounter), _clients.Values.ToList());
-                client.onoffercreated += (i, msg) => _clients[i].Send(msg);
+                client.SendMessage += (i, msg) => _clients[i].Send(msg);
                 client.readressSdp += (i, msg) => _clients[i].HandleSdp(msg, client.id);
                 client.OnStreamingStart += id =>
                 {
@@ -124,7 +124,19 @@ class Program
                 if (File.Exists(path))
                 {
                     ea.Response.ContentLength64 = new System.IO.FileInfo(path).Length;
-                    ea.Response.ContentType = "text/html";
+                    if (path.EndsWith(".css"))
+                    {
+                        ea.Response.ContentType = "text/css";
+                    }
+                    else if (path.EndsWith(".js"))
+                    {
+                        ea.Response.ContentType = "application/javascript";
+                    }
+                    else
+                    {
+                        ea.Response.ContentType = "text/html";
+                    }
+
                     using (var localFile = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     {
                         localFile.CopyTo(ea.Response.OutputStream);
@@ -152,51 +164,6 @@ class Program
             builder.Scheme = "https";
             return builder.Uri.ToString();
         }
-        
-        // public void RunPipeline()
-        // {
-        //     // Wait until error, EOS or State Change
-        //     var bus = _pipeline.Bus;
-        //     bool terminate = false;
-        //     do
-        //     {
-        //         var msg = bus.TimedPopFiltered(Gst.Constants.SECOND, MessageType.Error | MessageType.Eos | MessageType.StateChanged);
-        //         // Parse message
-        //         if (msg != null)
-        //         {
-        //             switch (msg.Type)
-        //             {
-        //                 case MessageType.Error:
-        //                     string debug;
-        //                     GLib.GException exc;
-        //                     msg.ParseError(out exc, out debug);
-        //                     Console.WriteLine("Error received from element {0}: {1}", msg.Src.Name, exc.Message);
-        //                     Console.WriteLine("Debugging information: {0}", debug != null ? debug : "none");
-        //                     terminate = true;
-        //                     break;
-        //                 case MessageType.Eos:
-        //                     Console.WriteLine("End-Of-Stream reached.\n");
-        //                     terminate = true;
-        //                     break;
-        //                 case MessageType.StateChanged:
-        //                     // We are only interested in state-changed messages from the pipeline
-        //                     if (msg.Src == _pipeline)
-        //                     {
-        //                         State oldState, newState, pendingState;
-        //                         msg.ParseStateChanged(out oldState, out newState, out pendingState);
-        //                         Console.WriteLine("Pipeline state changed from {0} to {1}:",
-        //                             Element.StateGetName(oldState), Element.StateGetName(newState));
-        //                     }
-        //                     break;
-        //                 default:
-        //                     // We should not reach here because we only asked for ERRORs, EOS and STATE_CHANGED
-        //                     Console.WriteLine("Unexpected message received.");
-        //                     break;
-        //             }
-        //         }
-        //     } while (!terminate);
-        // }
-
 
         static void Main(string[] args)
         {
@@ -217,9 +184,12 @@ class Program
 
             // app.RunPipeline();
 
-            while (true)
-            {
-                
-            }
+            // while (true)
+            // {
+            //     
+            // }
+
+            var loop = new MainLoop();
+            loop.Run();
         }
     }

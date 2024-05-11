@@ -7,6 +7,11 @@
  * Author: Nirbheek Chauhan <nirbheek@centricular.com>
  */
 
+let commands = {
+    REMOVE_PEER: 0,
+    REMOVE_STREAM: 1
+}
+
 let rtc_configuration = {iceServers: [{urls: "stun:stun.services.mozilla.com"},
                                       {urls: "stun:stun.l.google.com:19302"}]};
 
@@ -21,41 +26,11 @@ let default_constraints = {
 let peer_connection;
 let sck;
 
-let localMediaStream;
+let localVideoBlock = {};
 let isConnected = false;
 
 let incoming = {}
 let videoBlocks = {};
-
-function showPicture(deviceId) {
-    console.log("Changed");
-    navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, deviceId: deviceId }, audio: false })
-        .then(stream => {
-            localMediaStream = stream;
-            let video = document.querySelector("#local_stream");
-            video.srcObject = localMediaStream;
-            console.log(stream.getTracks()[0].label);
-        });
-
-}
-
-function addNewStream() {
-    let selector = document.querySelector("#video-selector");
-    let deviceId = selector.value;
-    
-    navigator.mediaDevices.getUserMedia({video: { width: 1280, height: 720, deviceId: deviceId }})
-        .then(stream => {
-            let localPlane = document.querySelector("#local-plane");
-            let video = document.createElement("video");
-            video.muted = true;
-            video.srcObject = stream;
-            video.playsInline = true;
-            video.autoplay = true;
-            video.classList.add("videobox")
-            localPlane.append(video);
-            peer_connection.addTrack(stream.getTracks()[0], stream);
-        })
-}
 
 function websocketServerConnect() {  
     navigator.mediaDevices.enumerateDevices().then((devices) => {
@@ -72,7 +47,7 @@ function websocketServerConnect() {
                 videoSelect.append(option);
             }
         });
-    })
+    });
     
     sck = new WebSocket(makeWsUrl('/sck'));
     sck.onopen = (event) => {
@@ -111,11 +86,13 @@ function websocketServerConnect() {
                 handleIncomingError("Unknown incoming JSON: " + msg);
             }
         } else if (msg.control) {
-            if (msg.control === 'REMOVE_PEER') {
+            if (msg.control.type === commands.REMOVE_PEER) {
                 incoming[msg.dest].close();
                 delete incoming[msg.dest];
                 videoBlocks[msg.dest].block.remove();
-                delete videoElements[msg.dest];
+                delete videoBlocks[msg.dest];
+            } else if (msg.control.type === commands.REMOVE_STREAM) {
+                removeVideoElement(msg.dest, msg.control.streamId);
             }
         }
     };
@@ -134,16 +111,6 @@ function websocketServerConnect() {
     }
 
     peer_connection = createPeer(-1);
-    
-    navigator.mediaDevices.getUserMedia(default_constraints)
-        .then(stream => {
-            localMediaStream = stream;
-            let video = document.querySelector("#local_stream");
-            video.srcObject = localMediaStream;
-            localMediaStream.getTracks().forEach(track => {
-                peer_connection.addTrack(track, localMediaStream);
-            });
-        });
     
     function makeWsUrl(ep) {
         let protocol = 'ws';
@@ -197,9 +164,9 @@ function createPeer(dest) {
     peer.ontrack = (event) => {
         let element = getOrCreateBlockElement(dest, event.streams[0].id);
         
-        if (element.srcObject !== event.streams[0]) {
+        if (element.video.srcObject !== event.streams[0]) {
             console.log('Incoming stream');
-            element.srcObject = event.streams[0];
+            element.video.srcObject = event.streams[0];
         }
     }
     
@@ -219,12 +186,25 @@ function createPeer(dest) {
 }
 
 function getOrCreateVideoBlock(dest) {
+    let username = "Some username";
     let block = videoBlocks[dest];
     if (block == null) {
-        block = document.createElement("div");
-        block.classList.add("block");
-        document.querySelector("#remote-streams").append(block);
-        videoBlocks[dest] = { userId: dest, block: block, elements: {} }
+        let blockElement = document.createElement("div");
+        blockElement.classList.add("block");
+        
+        let nameBlock = document.createElement("div");
+        nameBlock.classList.add("name");
+        nameBlock.innerHTML = username;
+        
+        let mediaBlock = document.createElement("div");
+        mediaBlock.classList.add("media");
+
+        blockElement.append(nameBlock);
+        blockElement.append(mediaBlock);
+        document.querySelector("#remote-streams").append(blockElement);
+        
+        block = { userId: dest, block: blockElement, username: username, media: mediaBlock, elements: {} }
+        videoBlocks[dest] = block;
     }
     return block;
 }
@@ -233,19 +213,58 @@ function getOrCreateBlockElement(dest, streamId) {
     let block = getOrCreateVideoBlock(dest);
     let element = block.elements[streamId]
     if (element == null) {
-        element = document.createElement("video");
-        element.playsInline = true;
-        element.autoplay = true;
-        element.classList.add("videobox")
-        block.block.append(element);
-        block.elements[streamId] = { streamId: streamId, element: element };
+        let div = document.createElement("div");
+        
+        let videoElement = document.createElement("video");
+        videoElement.playsInline = true;
+        videoElement.autoplay = true;
+        videoElement.classList.add("videobox")
+        videoElement.ondblclick = () => {
+            document.querySelector("#viewport").srcObject = videoElement.srcObject;
+        }
+        div.append(videoElement);
+        if (dest === -1) {
+            videoElement.muted = true;
+            let btn = document.createElement("input");
+            btn.type = "button";
+            btn.value = "Stop";
+            btn.onclick = () => {
+                stopSingleStream(streamId);
+            }
+            div.append(btn);
+        }
+        
+        block.media.append(div);
+        element = { streamId: streamId, div: div, video: videoElement, senders: [] };
+        block.elements[streamId] = element;
     }
     return element;
+}
+
+function stopSingleStream(streamId) {
+    let dest = -1;
+    videoBlocks[dest].elements[streamId].senders.forEach(it => {
+        peer_connection.removeTrack(it);
+    });
+    removeVideoElement(dest, streamId);
+    sck.send(JSON.stringify({ control: { type: commands.REMOVE_STREAM, streamId: streamId } }));
+}
+
+function removeVideoElement(dest, streamId) {
+    if (videoBlocks[dest].elements[streamId]) {
+        videoBlocks[dest].elements[streamId].div.remove();
+    }
+    delete videoBlocks[dest].elements[streamId];
 }
 
 function handleIncomingError(error) {
     console.error("ERROR: " + error);
 }
+
+function connect() {
+    setModalState("visible");
+}
+
 function doConnect() {
     sck.send('HELLO');
     peer_connection.createOffer().then(offer => {
@@ -255,26 +274,63 @@ function doConnect() {
         sck.send(JSON.stringify({ sdp: { 'sdp': offer }, dest: -1 }));
     })
 }
-let isScreenShared = false;
 
-function stopScreenShare() {
-    document.querySelector("#local_stream").srcObject = localMediaStream;
-    // senders.find(sender => sender.track.kind === 'video').replaceTrack(localMediaStream.getTracks().find(track => track.kind === 'video'));
+function setModalState(state) {
+    let modalWindow = document.querySelector("#select-media-window");
+    modalWindow.style.visibility = state;
+    
+    if (state === "visible" && document.querySelector("#local-preview").srcObject == null) {
+        showPreview();
+    }
 }
-function shareScreen() {
-    navigator.mediaDevices.getDisplayMedia({ cursor: true }).then(stream => {
-        let screenTrack = stream.getTracks()[0];
 
-        let localPlane = document.querySelector("#local-plane");
-        let video = document.createElement("video");
-        video.muted = true;
-        video.srcObject = stream;
-        video.playsInline = true;
-        video.autoplay = true;
-        video.classList.add("videobox")
-        localPlane.append(video);
-        peer_connection.addTrack(screenTrack, stream);
-    })
+function showPreview() {
+    let videoSelect = document.querySelector("#video-selector");
+    
+    navigator.mediaDevices.getUserMedia({video: { width: 1280, height: 720, deviceId: videoSelect.value }, audi: false})
+        .then(stream => {
+            document.querySelector("#local-preview").srcObject = stream;
+        })
+}
+
+function startStreaming(type) {
+    let promise;
+    if (type === 'screen') {
+        promise = getScreenMedia();
+    } else {
+        promise = getDeviceMedia(type);
+    }
+    
+    promise.then(stream => {
+        let element = getOrCreateBlockElement(-1, stream.id);
+        element.video.srcObject = stream;
+        let senders = [];
+        stream.getTracks().forEach(track => senders.push(peer_connection.addTrack(track, stream)));
+        element.senders = senders;
+        document.querySelector("#local-preview").srcObject = null;
+        if (!isConnected) {
+            doConnect();
+        }
+        setModalState("hidden");
+    });
+}
+
+function getDeviceMedia(type) {
+    let microSelect = document.querySelector("#microphone-selector");
+    let videoSelect = document.querySelector("#video-selector");
+    let options = {}
+    if (type === 'video') {
+        options = { video: { width: 1280, height: 720, deviceId: videoSelect.value }, audio: false };
+    } else if (type === 'audio') {
+        options = { video: false, audio: { deviceId: microSelect.value } };
+    } else if (type === 'both') {
+        options = { video: { width: 1280, height: 720, deviceId: videoSelect.value }, audio: { deviceId: microSelect.value } };
+    }
+    return navigator.mediaDevices.getUserMedia(options);
+}
+
+function getScreenMedia() {
+    return navigator.mediaDevices.getDisplayMedia({ cursor: true });
 }
 
 window.onload = websocketServerConnect;
