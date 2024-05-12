@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Login page</title>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="login.css">
+    
+    <script>
+        function login() {
+            let username = document.querySelector("#username").value;
+            let password = document.querySelector("#password").value;
+            fetch("/auth", {
+                method: 'POST',
+                body: JSON.stringify({ username: username, password: password })
+            }).then(response => {
+                if (response.ok) {
+                    console.log("Authed successfully");
+                    localStorage.setItem("username", username);
+                    window.location.assign("/index.html");
+                } else if (response.status === 401) {
+                    console.error("Unauthorized")
+                } else {
+                    console.error(response.statusText)
+                }
+            }).catch(console.error)
+        }
+        
+        function register() {
+            let username = document.querySelector("#username").value;
+            let password = document.querySelector("#password").value;
+            let repPass = document.querySelector("#repeat-password").value;
+            if (repPass !== password) {
+                console.error("Passwords don't match");
+                return;
+            }
+            fetch("/register", {
+                method: 'POST',
+                body: JSON.stringify({ username: username, password: username })
+            }).then(response => {
+                if (response.ok) {
+                    console.log("Registered successfully");
+                    login();
+                } else if (response.status === 409){
+                    console.error("Conflict")
+                } else {
+                    console.error(response.statusText)
+                }
+            }).catch(console.error)
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="wrapper">
+            <div class="title"><span>Login Form</span></div>
+            <form action="/authenticate" method="post">
+                <div class="row">
+                    <input id="username" type="text" placeholder="Username" required>
+                </div>
+                <div class="row">
+                    <input  id="password" type="password" placeholder="Password" required>
+                </div>
+                <div class="row">
+                    <input id="repeat-password" type="password" placeholder="Repeat password">
+                </div>
+                <div class="row button">
+                    <input type="button" value="Login" onclick="login()">
+                </div>
+                <div class="row button">
+                    <input type="button" value="Register" onclick="register()">
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

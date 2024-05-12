@@ -32,9 +32,12 @@ let isConnected = false;
 let incoming = {}
 let videoBlocks = {};
 
-function websocketServerConnect() {  
+let username = "Default username";
+
+function initApp() {  
+    username = localStorage.getItem("username") || "Default username";
+    
     navigator.mediaDevices.enumerateDevices().then((devices) => {
-        console.log(devices);
         let microSelect = document.querySelector("#microphone-selector");
         let videoSelect = document.querySelector("#video-selector");
         devices.forEach(device => {
@@ -48,22 +51,63 @@ function websocketServerConnect() {
             }
         });
     });
+
+    document.querySelector("#chat-input").onkeyup = (event) => {
+        if (event.keyCode === 13) {
+            sendMessage(event.target.value);
+            event.target.value = "";
+        }
+    }
     
-    sck = new WebSocket(makeWsUrl('/sck'));
-    sck.onopen = (event) => {
+    sck = createWebSocket();
+    peer_connection = createPeer(-1);
+}
+
+function createWebSocket() {
+    function makeWsUrl(ep) {
+        let protocol = 'ws';
+        if (window.location.protocol.startsWith('https'))
+            protocol = 'wss';
+
+        let host = window.location.hostname;
+        let port = window.location.port || (protocol === 'wss' ? 443 : 80);
+
+        return protocol + '://' + host + ':' + port + (ep.startsWith('/') ? ep : ('/' + ep));
+    }
+    
+    function removeSocket() {
+        if (peer_connection) {
+            peer_connection.close();
+            peer_connection = null;
+        }
+
+        incoming.forEach(it => it.peer.close());
+        incoming = [];
+
+        sck = null;
+    }
+
+    let pathSegments = window.location.pathname.split("/");
+    let roomId = pathSegments[pathSegments.length - 1];
+    
+    let socket = new WebSocket(makeWsUrl('/sck?roomId=' + roomId));
+    socket.onopen = (event) => {
         console.log("Connected to server");
     };
-    sck.onerror = function (event) {
+    socket.onerror = function (event) {
         console.error("web socket error", event);
     };
-    sck.onmessage = function (event) {
+    socket.onmessage = function (event) {
         console.log('received ' + event.data);
         let msg = JSON.parse(event.data);
         if (msg.chat) {
-            console.log("in chat: " + msg.chat.text);
+            let element = document.createElement("div");
+            element.classList.add("message");
+            element.innerHTML = msg.username + ": " + msg.chat.text;
+            document.querySelector("#message-block").append(element);
         } else if (msg.sdp) {
             if (msg.sdp.sdp != null) {
-                let connection = getOrCreatePeer(msg.dest);
+                let connection = getOrCreatePeer(msg.dest, msg.username);
                 connection.setRemoteDescription(msg.sdp.sdp).then(() => {
                     if (msg.sdp.sdp.type === "offer") {
                         connection.createAnswer().then(answer => {
@@ -72,6 +116,7 @@ function websocketServerConnect() {
                         }).then(answer => {
                             console.log("Sending answer: " + JSON.stringify({ sdp: { 'sdp': answer }, dest: msg.dest }));
                             sck.send(JSON.stringify({ sdp: { 'sdp': answer }, dest: msg.dest }));
+                            getOrCreateVideoBlock(msg.dest);
                         }).catch(console.warn)
                     }
                 })
@@ -87,7 +132,7 @@ function websocketServerConnect() {
             }
         } else if (msg.control) {
             if (msg.control.type === commands.REMOVE_PEER) {
-                incoming[msg.dest].close();
+                incoming[msg.dest].peer.close();
                 delete incoming[msg.dest];
                 videoBlocks[msg.dest].block.remove();
                 delete videoBlocks[msg.dest];
@@ -96,46 +141,27 @@ function websocketServerConnect() {
             }
         }
     };
-    sck.onclose = function () {
+    socket.onclose = function () {
         console.warn('Disconnected from server');
-
-        if (peer_connection) {
-            peer_connection.close();
-            peer_connection = null;
-        }
-        
-        incoming.forEach(it => it.close());
-        incoming = [];
-
-        sck = null;
+        removeSocket();
     }
-
-    peer_connection = createPeer(-1);
     
-    function makeWsUrl(ep) {
-        let protocol = 'ws';
-        if (window.location.protocol.startsWith('https'))
-            protocol = 'wss';
-
-        let host = window.location.hostname;
-        let port = window.location.port || (protocol === 'wss' ? 443 : 80);
-
-        return protocol + '://' + host + ':' + port + (ep.startsWith('/') ? ep : ('/' + ep));
-    }
+    return socket;
 }
 
-function getOrCreatePeer(dest) {
+function getOrCreatePeer(dest, destName) {
     let connection;
     if (dest === -1) {
-        connection = peer_connection;
+        return peer_connection;
     } else {
         connection = incoming[dest];
         if (connection == null) {
-            connection = createPeer(dest);
+            let remotePeer = createPeer(dest);
+            connection = { peer: remotePeer, username: destName };
             incoming[dest] = connection;
         }
     }
-    return connection;
+    return connection.peer;
 }
 
 function createPeer(dest) {
@@ -149,8 +175,9 @@ function createPeer(dest) {
 
     peer.onconnectionstatechange = ev => {
         console.log("Connection state of " + dest + " changed to " + peer_connection.connectionState);
-        if (peer_connection.connectionState === 'connected') {
+        if (peer.connectionState === 'connected') {
             isConnected = true;
+            document.querySelector("#chat-input").disabled = false;
         }
     }
 
@@ -186,7 +213,6 @@ function createPeer(dest) {
 }
 
 function getOrCreateVideoBlock(dest) {
-    let username = "Some username";
     let block = videoBlocks[dest];
     if (block == null) {
         let blockElement = document.createElement("div");
@@ -194,7 +220,8 @@ function getOrCreateVideoBlock(dest) {
         
         let nameBlock = document.createElement("div");
         nameBlock.classList.add("name");
-        nameBlock.innerHTML = username;
+        let label = (dest === -1 ? username : incoming[dest].username) || "Default username";
+        nameBlock.innerHTML = label;
         
         let mediaBlock = document.createElement("div");
         mediaBlock.classList.add("media");
@@ -228,6 +255,7 @@ function getOrCreateBlockElement(dest, streamId) {
             let btn = document.createElement("input");
             btn.type = "button";
             btn.value = "Stop";
+            btn.classList.add("stopBtn");
             btn.onclick = () => {
                 stopSingleStream(streamId);
             }
@@ -266,7 +294,7 @@ function connect() {
 }
 
 function doConnect() {
-    sck.send('HELLO');
+    sck.send('HELLO ' + username);
     peer_connection.createOffer().then(offer => {
         peer_connection.setLocalDescription(offer);
         return offer;
@@ -295,6 +323,15 @@ function showPreview() {
 
 function startStreaming(type) {
     let promise;
+    if (type === 'none') {
+        getOrCreateVideoBlock(-1);
+        if (!isConnected) {
+            doConnect();
+        }
+        setModalState("hidden");
+        return;
+    } 
+    
     if (type === 'screen') {
         promise = getScreenMedia();
     } else {
@@ -333,6 +370,10 @@ function getScreenMedia() {
     return navigator.mediaDevices.getDisplayMedia({ cursor: true });
 }
 
-window.onload = websocketServerConnect;
+function sendMessage(text) {
+    if (!isConnected || text == null || text === "") return;
+    sck.send(JSON.stringify({ chat: { text: text }, username: username }));
+}
 
+window.onload = initApp;
 

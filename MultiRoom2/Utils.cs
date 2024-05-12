@@ -20,11 +20,11 @@ public class SdpIceContent
 
 public class WebMsg
 {
-    public int src;
     public int dest;
     public SdpMsg sdp;
     public ChatMsg chat;
     public ControlMsg control;
+    public string username;
 }
 
 public enum ControlMsgType
@@ -39,12 +39,6 @@ public class ControlMsg
     public string streamId;
 }
 
-public class UserlistMsg
-{
-    public string[] names;
-    public int awaiting;
-}
-
 public class ChatMsg
 {
     public string text;
@@ -53,4 +47,14 @@ public class ChatMsg
 public enum MediaType
 {
     VIDEO, AUDIO
+}
+
+public class RegistrationRequest
+{
+    public string Username { get; set; }
+    public string Password { get; set; }
+}
+
+public class CreateRoomResponse {
+    public string RoomId { get; set; }
 }

@@ -1,67 +1,50 @@
-﻿<!DOCTYPE html>
-<!--
-  vim: set sts=2 sw=2 et :
-
-
-  Demo Javascript app for negotiating and streaming a sendrecv webrtc stream
-  with a GStreamer app. Runs only in passive mode, i.e., responds to offers
-  with answers, exchanges ICE candidates, and streams.
-
-  Author: Nirbheek Chauhan <nirbheek@centricular.com>
--->
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Videoconference</title>
+    <title>Main page</title>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <script src="webrtc.js"></script>
+    <link rel="stylesheet" href="login.css" />
+
+    <script>
+        function goToRoom() {
+            let roomId = document.querySelector("#roomId").value;
+            window.location.assign("/room/" + roomId);
+        }
+        
+        function createRoom() {
+            fetch("/room/create", { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    return null;
+                }
+            }).then(body => {
+                if (body != null) {
+                    window.location.assign("/room/" + body.RoomId);
+                } else {
+                    alert("Something went wrong");
+                }
+            });
+        }
+    </script>
 </head>
 <body>
-    <div>
-        <div id="remote-streams" class="container"></div>
-    
-        <div style="padding: 0.5em">
-            <div class="main-page">
-                <div class="viewport-window">
-                    <video id="viewport" autoplay playsinline class="viewport"></video>
-                </div>
-                <div class="chat"></div>
+<div class="container">
+    <div class="wrapper">
+        <div class="title"><span>Room form</span></div>
+        <form>
+            <div class="row">
+                <input id="roomId" type="text" placeholder="Room id" required />
             </div>
-            <div class="templates-block">
-                <label for="template-selector">Select template:</label>
-                <select id="template-selector">
-                    <option value="default">Default</option>
-                    <option value="main">main</option>
-                    <option value="reshetka">reshetka</option>
-                </select>
+            <div class="row button">
+                <input type="button" value="Join" onclick="goToRoom()" />
             </div>
-            <div>
-                <input type="button" value="Connect" onclick="connect()"/>
+            <div class="row button">
+                <input type="button" value="Create" onclick="createRoom()" />
             </div>
-        </div>
+        </form>
     </div>
-
-    <div id="select-media-window" class="modal">
-        <video autoplay playsinline id="local-preview"></video>
-        <div class="device-selectors">
-            <div>
-                <label for="microphone-selector">Select micro:</label>
-                <select id="microphone-selector"></select>
-            </div>
-            <div>
-                <label for="video-selector">Select cam:</label>
-                <select id="video-selector" onchange="showPreview()"></select>
-            </div>
-            <div>
-                <input type="button" value="Send video" onclick="startStreaming('video')"/>
-                <input type="button" value="Send audio" onclick="startStreaming('audio')"/>
-                <input type="button" value="Send video + audio" onclick="startStreaming('both')"/>
-                <input type="button" value="Send screenshare" onclick="startStreaming('screen')"/>
-            </div>
-            <div>
-                <input type="button" value="Close" onclick="setModalState('hidden')"/>
-            </div>
-        </div>
-    </div>
+</div>
 </body>
 </html>

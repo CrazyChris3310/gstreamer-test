@@ -58,17 +58,19 @@ public class Client : WebSocketBehavior
     private MediaFlow<IncomingFlow> incoming;
     private Dictionary<int, MediaFlow<OutgoingFlow>> outgoingFlows = new();
     private Thread? messageLoopThread = null;
+    private string username = null;
 
     public Action OnSocketClosed;
     public Action<int, WebMsg> SendMessage;
     public Action<int, SdpMsg> readressSdp;
     public Action<int> OnStreamingStart;
+    public Action<string> JoinRoom;
 
+    public bool IsHost = false;
     public bool isStreaming = false;
 
-    public Client(int id, List<Client> otherClients)
+    public Client()
     {
-        this.id = id;
         incoming = new MediaFlow<IncomingFlow>()
         {
             webrtcbin = CreateWebrtcBin(-1)
@@ -77,14 +79,23 @@ public class Client : WebSocketBehavior
         _pipeline.Bus.AddWatch(messageLoop);
         _pipeline.Add(incoming.webrtcbin);
         
-        foreach (var otherClient in otherClients)
+        // foreach (var otherClient in otherClients)
+        // {
+        //     if (otherClient.id == id)
+        //     {
+        //         continue;
+        //     }
+        //     outgoingFlows[otherClient.id] = new MediaFlow<OutgoingFlow>() { webrtcbin = CreateWebrtcBin(otherClient.id) };
+        //     _pipeline.Add(outgoingFlows[otherClient.id].webrtcbin);
+        // }
+    }
+
+    public void setOutgoing(List<Client> clients)
+    {
+        foreach (var client in clients)
         {
-            if (otherClient.id == id)
-            {
-                continue;
-            }
-            outgoingFlows[otherClient.id] = new MediaFlow<OutgoingFlow>() { webrtcbin = CreateWebrtcBin(otherClient.id) };
-            _pipeline.Add(outgoingFlows[otherClient.id].webrtcbin);
+            outgoingFlows[client.id] = new MediaFlow<OutgoingFlow>() { webrtcbin = CreateWebrtcBin(client.id) };
+            _pipeline.Add(outgoingFlows[client.id].webrtcbin);
         }
     }
 
@@ -369,7 +380,9 @@ public class Client : WebSocketBehavior
             
             SendMessage(peerId,
                 new WebMsg()
-                    { dest = id, control = new ControlMsg() { type = ControlMsgType.REMOVE_STREAM, streamId = streamId } });
+                    { dest = id, 
+                        control = new ControlMsg() { type = ControlMsgType.REMOVE_STREAM, streamId = streamId }
+                    });
         }
     }
 
@@ -420,11 +433,11 @@ public class Client : WebSocketBehavior
 
         if (dest == -1)
         {
-            Send(new WebMsg() { sdp = iceMsg, src = id, dest = dest });
+            Send(new WebMsg() { sdp = iceMsg, dest = dest });
         }
         else
         {
-            SendMessage(dest, new WebMsg() { sdp = iceMsg, src = id, dest = id });
+            SendMessage(dest, new WebMsg() { sdp = iceMsg, dest = id });
         }
     }
 
@@ -434,9 +447,7 @@ public class Client : WebSocketBehavior
         var webRtc = o as Element;
         Assert(webRtc != null, "not a webrtc object");
 
-        //_client.CreateSendingChain(_webrtcbin);
-
-        var promise = new Promise((promise) => OnOfferCreated(promise, dest)); //, webrtc.Handle, null); // webRtc.Handle, null);
+        var promise = new Promise((promise) => OnOfferCreated(promise, dest));
         Structure structure = new Structure("struct");
         webRtc.Emit("create-offer", structure, promise);
     }
@@ -461,9 +472,9 @@ public class Client : WebSocketBehavior
             var sdpMsg = new SdpMsg { sdp = new SdpContent { type = "offer", sdp = offer.Sdp.AsText() } };
             if (dest == -1)
             {
-                Send(new WebMsg() { sdp = sdpMsg, src = id, dest = dest });
+                Send(new WebMsg() { sdp = sdpMsg, dest = dest, username = username});
             } else {
-                SendMessage(dest, new WebMsg() { sdp = sdpMsg, src = id, dest = id });
+                SendMessage(dest, new WebMsg() { sdp = sdpMsg, dest = id, username = username });
             }
         }
     }
@@ -508,11 +519,11 @@ public class Client : WebSocketBehavior
                                 var sdpMsg2 = new SdpMsg { sdp = new SdpContent { type = "answer", sdp = offer.Sdp.AsText() } };
                                 if (dest == -1)
                                 {
-                                    Send(new WebMsg() { sdp = sdpMsg2, dest = dest });
+                                    Send(new WebMsg() { sdp = sdpMsg2, dest = dest, username = username });
                                 }
                                 else
                                 {
-                                    SendMessage(dest, new WebMsg() { sdp = sdpMsg2, dest = id });
+                                    SendMessage(dest, new WebMsg() { sdp = sdpMsg2, dest = id, username = username });
                                 }
                             }
                         });
@@ -520,7 +531,6 @@ public class Client : WebSocketBehavior
                     }
                 }
             });
-            // var promise = new Promise();
             peer.Emit("set-remote-description", remoteDescription, promise);
         }
         else if (msg.ice != null)
@@ -549,7 +559,7 @@ public class Client : WebSocketBehavior
     {
         if (e.IsText)
         {
-            if (e.Data == "HELLO")
+            if (e.Data.StartsWith("HELLO"))
             {
                 if (!isStreaming)
                 {
@@ -557,19 +567,19 @@ public class Client : WebSocketBehavior
                     isStreaming = true;
                     OnStreamingStart(id);
                     _pipeline.SetState(Gst.State.Playing);
-                    if (messageLoopThread == null)
-                    {
-                        messageLoopThread = new Thread(() =>
-                        {
-                            while (true)
-                            {
-                                
-                            }
-                        });
-                        messageLoopThread.IsBackground = true;
-                        messageLoopThread.Start();
-                    }
-                } 
+                    // if (messageLoopThread == null)
+                    // {
+                    //     messageLoopThread = new Thread(() =>
+                    //     {
+                    //         while (true)
+                    //         {
+                    //             
+                    //         }
+                    //     });
+                    //     messageLoopThread.IsBackground = true;
+                    //     messageLoopThread.Start();
+                    // }
+                }
             }
             else
             {
@@ -578,18 +588,32 @@ public class Client : WebSocketBehavior
                 {
                     //_client.InitiateAudioLink(msg.sdp);
                     HandleIncomingSdp(msg.sdp, msg.dest);
-                } else if (msg.control != null)
+                } 
+                else if (msg.control != null)
                 {
                     if (msg.control.type == ControlMsgType.REMOVE_STREAM)
                     {
                         // RemoveStream(msg.control.streamId);
                     }
+                } else if (msg.chat != null)
+                {
+                    BroadcastChatMessage(msg.username, msg.chat.text);
                 }
             }
         }
         else
         {
             throw new NotImplementedException("");
+        }
+    }
+
+    private void BroadcastChatMessage(string srcName, string text)
+    {
+        var message = new WebMsg() { chat = new ChatMsg() { text = text }, dest = id, username = srcName };
+        Send(message);
+        foreach (var (peerId, _) in outgoingFlows)
+        {
+            SendMessage(peerId, message);
         }
     }
 
@@ -663,7 +687,17 @@ public class Client : WebSocketBehavior
 
         outgoingFlows = [];
     }
-    
+
+    protected override void OnOpen()
+    {
+        var auth = Context.CookieCollection["authentication"]?.Value!;
+        var creds = auth.Split("/");
+        id = int.Parse(creds[0]);
+        username = creds[1];
+        var roomId = Context.QueryString["roomId"]!;
+        JoinRoom(roomId);
+    }
+
     protected override void OnClose(CloseEventArgs e)
     {
         Console.WriteLine("Closing socket");
