@@ -28,8 +28,10 @@ public class IncomingFlow : Flow
     public Element decodebin;
     public Element queue;
     public Element converter;
-    public Element fakesink;
+    public Element? fakesink;
     public Element tee;
+    public Element? videosink;
+    public Element? muxer;
 }
 
 public class OutgoingFlow : Flow
@@ -68,6 +70,7 @@ public class Client : WebSocketBehavior
 
     public bool IsHost = false;
     public bool isStreaming = false;
+    public string? currentRoom;
 
     public Client()
     {
@@ -114,12 +117,12 @@ public class Client : WebSocketBehavior
         Assert(!caps.IsEmpty);
         Structure s = caps[0];
         var name = s.Name;
+        Console.WriteLine("Caps name: " + name);
 
         if (name.StartsWith("video"))
         {
             var q = ElementFactory.Make("queue");
             var conv = ElementFactory.Make("videoconvert");
-            var fakeSink = ElementFactory.Make("fakesink");
             var tee = ElementFactory.Make("tee");
 
             var incomingTrack = new IncomingFlow()
@@ -129,32 +132,83 @@ public class Client : WebSocketBehavior
                 queue = q,
                 converter = conv,
                 decodebin = decodeBin,
-                fakesink = fakeSink,
                 tee = tee
             };
-            incoming.tracks.Add(incomingTrack);
 
-            _pipeline.Add(q, conv, tee, fakeSink);
-            q.Link(conv);
-            conv.Link(tee);
+            _pipeline.Add(q, conv, tee);
+            Element.Link(q, conv, tee);
             newPad.Link(q.GetStaticPad("sink"));
-            
-            var srcPad = tee.PadTemplateList.First(it => it.Name.Contains("src"));
-            var teeSrcPad = tee.RequestPad(srcPad);
-            teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
-            Broadcast(incomingTrack);
 
+            if (IsHost)
+            {
+                // Element? capsFilter = ElementFactory.Make("capsfilter");
+                // string videocaps = "application/x-rtp,media=audio,encoding-name=OPUS,payload=96";
+                // Util.SetObjectArg(capsFilter, "caps", caps);
+                Element? muxer;
+                Element? filesink;
+                var sameStreamFlow = incoming.tracks.Find(it => it.streamId == streamId);
+                if (sameStreamFlow != null)
+                {
+                    muxer = sameStreamFlow.muxer;
+                    filesink = sameStreamFlow.videosink;
+                }
+                else
+                {
+                    muxer = ElementFactory.Make("matroskamux");
+                    filesink = ElementFactory.Make("filesink");
+                    var location = "C:\\Users\\danil\\RiderProjects\\MyGstreamerApp\\MultiRoom2\\recordings\\" + currentRoom;
+                    if (!Directory.Exists(location))
+                    {
+                        Directory.CreateDirectory(location);
+                    }
+                    filesink.SetProperty("location", new Value(location + "\\" + streamId + ".mkv"));
+                }
+
+                if (muxer == null || filesink == null)
+                {
+                    throw new Exception("Muxer or filesink can't be found or created");
+                }
+                
+                _pipeline.Add(muxer, filesink);
+                muxer.Link(filesink);
+                
+                var srcPad = tee.PadTemplateList.First(it => it.Name.Contains("src"));
+                var teeSrcPad = tee.RequestPad(srcPad);
+
+                var sinkTemplate = muxer.PadTemplateList.First(it => it.Name.Contains("video"));
+                var sinkPad = muxer.RequestPad(sinkTemplate);
+
+                var padLinkReturn = teeSrcPad.Link(sinkPad);
+                Console.Error.WriteLine("Result of linking tee with muxer: " + padLinkReturn);
+
+                incomingTrack.muxer = muxer;
+                incomingTrack.videosink = filesink;
+            }
+            else
+            {
+                var fakeSink = ElementFactory.Make("fakesink");
+                var srcPad = tee.PadTemplateList.First(it => it.Name.Contains("src"));
+                var teeSrcPad = tee.RequestPad(srcPad);
+                teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
+
+                incomingTrack.fakesink = fakeSink;
+            }
+            incoming.tracks.Add(incomingTrack);
+            
+            Broadcast(incomingTrack);
+            
             q.SetState(Gst.State.Playing);
             conv.SetState(Gst.State.Playing);
             tee.SetState(Gst.State.Playing);
-            fakeSink.SetState(Gst.State.Playing);
+            incomingTrack.fakesink?.SetState(Gst.State.Playing);
+            incomingTrack.muxer?.SetState(Gst.State.Playing);
+            incomingTrack.videosink?.SetState(Gst.State.Playing);
         }
         else if (name.StartsWith("audio"))
         {
             var q = ElementFactory.Make("queue");
             var conv = ElementFactory.Make("audioconvert");
             var resample = ElementFactory.Make("audioresample");
-            var fakeSink = ElementFactory.Make("fakesink");
             var audioTee = ElementFactory.Make("tee");
 
             var incomingTrack = new IncomingFlow()
@@ -164,28 +218,75 @@ public class Client : WebSocketBehavior
                 decodebin = decodeBin,
                 queue = q,
                 converter = conv,
-                fakesink = fakeSink,
                 tee = audioTee
-                // resample = resample,
             };
-            incoming.tracks.Add(incomingTrack);
             
-            _pipeline.Add(q, conv, resample, audioTee, fakeSink);
+            _pipeline.Add(q, conv, resample, audioTee);
             Element.Link(q, conv, resample, audioTee);
             newPad.Link(q.GetStaticPad("sink"));
+            
+            if (IsHost)
+            {
+                Element? muxer;
+                Element? filesink;
+                var sameStreamFlow = incoming.tracks.Find(it => it.streamId == streamId);
+                if (sameStreamFlow != null)
+                {
+                    muxer = sameStreamFlow.muxer;
+                    filesink = sameStreamFlow.videosink;
+                }
+                else
+                {
+                    muxer = ElementFactory.Make("webmmux");
+                    filesink = ElementFactory.Make("filesink");
+                    var location = "C:\\Users\\danil\\RiderProjects\\MyGstreamerApp\\MultiRoom2\\recordings\\" + currentRoom;
+                    if (!Directory.Exists(location))
+                    {
+                        Directory.CreateDirectory(location);
+                    }
+                    filesink.SetProperty("location", new Value(location + "\\" + streamId + ".mkv"));
+                }
 
-            var srcPad = audioTee.PadTemplateList.First(it => it.Name.Contains("src"));
-            var teeSrcPad = audioTee.RequestPad(srcPad);
-            teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
+                if (muxer == null || filesink == null)
+                {
+                    throw new Exception("Muxer or filesink can't be found or created");
+                }
+                
+                _pipeline.Add(muxer, filesink);
+                muxer.Link(filesink);
+                
+                var srcPad = audioTee.PadTemplateList.First(it => it.Name.Contains("src"));
+                var teeSrcPad = audioTee.RequestPad(srcPad);
 
+                var sinkTemplate = muxer.PadTemplateList.First(it => it.Name.Contains("audio"));
+                var sinkPad = muxer.RequestPad(sinkTemplate);
+
+                teeSrcPad.Link(sinkPad);
+
+                incomingTrack.muxer = muxer;
+                incomingTrack.videosink = filesink;
+            }
+            else
+            {
+                var fakeSink = ElementFactory.Make("fakesink");
+                var srcPad = audioTee.PadTemplateList.First(it => it.Name.Contains("src"));
+                var teeSrcPad = audioTee.RequestPad(srcPad);
+                teeSrcPad.Link(fakeSink.GetStaticPad("sink"));
+
+                incomingTrack.fakesink = fakeSink;
+            }
+            incoming.tracks.Add(incomingTrack);
+
+            
             Broadcast(incomingTrack);
             
-            _pipeline.SyncChildrenStates();
             q.SetState(Gst.State.Playing);
             conv.SetState(Gst.State.Playing);
             resample.SetState(Gst.State.Playing);
             audioTee.SetState(Gst.State.Playing);
-            fakeSink.SetState(Gst.State.Playing);
+            incomingTrack.fakesink?.SetState(Gst.State.Playing);
+            incomingTrack.muxer?.SetState(Gst.State.Playing);
+            incomingTrack.videosink?.SetState(Gst.State.Playing);
         }
     }
 
@@ -696,12 +797,14 @@ public class Client : WebSocketBehavior
         username = creds[1];
         var roomId = Context.QueryString["roomId"]!;
         JoinRoom(roomId);
+        currentRoom = roomId;
     }
 
     protected override void OnClose(CloseEventArgs e)
     {
         Console.WriteLine("Closing socket");
         RemoveOutgoingPeers();
+        currentRoom = null;
         OnSocketClosed();
         // messageLoopThread!.Interrupt();
     }
