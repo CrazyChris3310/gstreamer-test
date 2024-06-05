@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Text.Unicode;
 using Gst;
 using MultiRoom;
+using MultiRoom2.Database;
 using MultiRoom2.Services;
 using WebApplication1;
 using WebSocketSharp;
@@ -16,9 +17,8 @@ public class DispatchController
 {
     private const string Location = @"C:\Users\danil\RiderProjects\MyGstreamerApp\MultiRoom2\Web";
     
-    private readonly DbContext db = new();
-
-    private readonly AuthService AuthService;
+    private readonly DbManager dbManager = new(new DbContext());
+    
     private readonly RoomService RoomService;
     private readonly MailService _mailService;
     private readonly ProfileService _profileService;
@@ -27,10 +27,9 @@ public class DispatchController
 
     public DispatchController(MultistreamConferenceConfiguration config)
     {
-        AuthService = new AuthService(db);
-        RoomService = new RoomService(db);
+        RoomService = new RoomService(dbManager);
         _mailService = new MailService();
-        _profileService = new ProfileService(db, config, _mailService);
+        _profileService = new ProfileService(dbManager, config, _mailService);
         
         _controllers.Add(new ProfileController(_profileService));
         _controllers.Add(new RoomController(RoomService, _profileService));
@@ -118,60 +117,7 @@ public class DispatchController
         {
             response.StatusCode = 404;
         }
-
-        // switch (req.HttpMethod)
-        // {
-        //     case "POST":
-        //         OnPost(req, response);
-        //         break;
-        //     case "GET":
-        //         OnGet(req, response);
-        //         break;
-        //     default:
-        //         response.StatusCode = (int) HttpStatusCode.MethodNotAllowed;
-        //         return;
-        // }
     }
-
-    // private void OnGet(HttpListenerRequest req, HttpListenerResponse response)
-    // {
-    //     var urlPath = req.Url.AbsolutePath;
-    //
-    //     if (urlPath.StartsWith("/room/"))
-    //     {
-    //         var exists = RoomService.GetRoom(req, response);
-    //         if (!exists) return;
-    //         GetStaticFile("/room.html", response);
-    //     }
-    //     else if (urlPath.Length == 0 || urlPath == "/")
-    //     {
-    //         GetStaticFile("/index.html", response);
-    //     }
-    //     else {
-    //         GetStaticFile(req.Url.AbsolutePath, response);
-    //     }
-    // }
-
-    // private void OnPost(HttpListenerRequest req, HttpListenerResponse response)
-    // {
-    //     var urlPath = req.Url.AbsolutePath;
-    //
-    //     switch (urlPath)
-    //     {
-    //         case "/room/create":
-    //             RoomService.CreateRoom(req, response);
-    //             break;
-    //         case "/auth":
-    //             AuthService.Login(req, response);
-    //             break;
-    //         case "/register":
-    //             AuthService.Register(req, response);
-    //             break;
-    //         default:
-    //             response.StatusCode = (int)HttpStatusCode.NotFound;
-    //             break;
-    //     }
-    // }
 
     private static void GetStaticFile(string urlPath, HttpListenerResponse response)
     {

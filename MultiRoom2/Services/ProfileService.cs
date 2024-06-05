@@ -1,5 +1,6 @@
 using System.Data.SqlTypes;
 using GLib;
+using MultiRoom2.Database;
 using MultiRoom2.Entities;
 using MultistreamConferenceTestService.Util;
 using WebApplication1;
@@ -9,13 +10,13 @@ namespace MultiRoom2.Services;
 
 public class ProfileService
 {
-    private DbContext db;
+    private DbManager dbManager;
     private MultistreamConferenceConfiguration config;
     private MailService mailService;
 
-    public ProfileService(DbContext db, MultistreamConferenceConfiguration config, MailService mailService)
+    public ProfileService(DbManager dbManager, MultistreamConferenceConfiguration config, MailService mailService)
     {
-        this.db = db;
+        this.dbManager = dbManager;
         this.config = config;
         this.mailService = mailService;
     }
@@ -23,7 +24,7 @@ public class ProfileService
     public void Register(RegisterSpecType regData)
     {
         var loginKey = regData.Login.ToLower();
-        if (db.UserInfos.FirstOrDefault(u => u.LoginKey == loginKey) != null)
+        if (dbManager.Query(db => db.UserInfos.FirstOrDefault(u => u.LoginKey == loginKey)) != null)
         {
             throw new ApplicationException("User " + regData.Login + " already exists");
         }
@@ -45,11 +46,13 @@ public class ProfileService
                 LastLoginStamp = SqlDateTime.MinValue.Value,
                 LastTokenStamp = SqlDateTime.MinValue.Value
             };
-            db.UserInfos.Add(user);
-            db.SaveChanges();
+            dbManager.Update(db =>
+                db.UserInfos.Add(user)
+            );
+            dbManager.Commit();
 
             RequestActivationImpl(user, regData.Email);
-            db.SaveChanges();
+            dbManager.Commit();
         }
     }
 
@@ -57,7 +60,7 @@ public class ProfileService
     {
         var loginKey = spec.Login.ToLower();
         
-        var user = db.UserInfos.FirstOrDefault(u => u.LoginKey == loginKey);
+        var user = dbManager.Query(db => db.UserInfos.FirstOrDefault(u => u.LoginKey == loginKey));
         if (user != null && user.Email == spec.Email && !user.IsDeleted)
         {
             var accessRestoreToken = MakeToken();
@@ -65,7 +68,7 @@ public class ProfileService
             user.LastToken = accessRestoreToken;
             user.LastTokenStamp = DateTime.UtcNow;
             user.LastTokenKind = DbUserTokenKind.AccessRestore;
-            db.SaveChanges();
+            dbManager.Commit();
             
 
             mailService.SendMail(
@@ -81,7 +84,7 @@ public class ProfileService
 
     public OkType Activate(string? key)
     {
-        var user = db.UserInfos.FirstOrDefault(u => u.LastToken == key);
+        var user = dbManager.Query(db => db.UserInfos.FirstOrDefault(u => u.LastToken == key));
 
         if (user is { LastTokenKind: DbUserTokenKind.Activation })
         {
@@ -93,7 +96,7 @@ public class ProfileService
                 user.LastLoginStamp = DateTime.UtcNow;
                 user.LastToken = null;
                 user.Activated = true;
-                db.SaveChanges();
+                dbManager.Commit();
             }
             else
             {
@@ -110,7 +113,7 @@ public class ProfileService
 
     public OkType RestoreAccess(string? key)
     {
-        var user = db.UserInfos.FirstOrDefault(u => u.LastToken == key);
+        var user = dbManager.Query(db => db.UserInfos.FirstOrDefault(u => u.LastToken == key));
 
         if (user is { LastTokenKind: DbUserTokenKind.AccessRestore })
         {
@@ -118,7 +121,7 @@ public class ProfileService
             {
                 user.LastLoginStamp = DateTime.UtcNow;
                 user.LastToken = null;
-                db.SaveChanges();
+                dbManager.Commit();
             }
             else
             {
@@ -135,25 +138,23 @@ public class ProfileService
 
     public void DeleteProfile(long userId)
     {
-        var user = db.UserInfos.First(u => u.Id == userId);
+        var user = dbManager.Query(db => db.UserInfos.First(u => u.Id == userId));
 
         user.IsDeleted = true;
         user.LastToken = null;
         
-        db.SaveChanges();
+        dbManager.Commit();
     }
     
     public long Login(LoginSpecType loginSpec)
     {
-        var loginKey = loginSpec.Login;
-        var user = db.UserInfos.FirstOrDefault(u => u.LoginKey == loginKey);
+        var loginKey = loginSpec.Login.ToLower();
+        var user = dbManager.Query(db => db.UserInfos.FirstOrDefault(u => u.LoginKey == loginKey));
 
         if (user != null && user.PasswordHash == loginSpec.Password && !user.IsDeleted)
         {
             user.LastLoginStamp = DateTime.UtcNow;
-            db.SaveChanges();
-            
-            // todo: set cookie
+            dbManager.Commit();
 
             return user.Id;
         }
@@ -165,19 +166,19 @@ public class ProfileService
     
     public void RequestActivation(RequestActivationSpecType spec, long userId)
     {
-        RequestActivationImpl(db.UserInfos.First(u => u.Id == userId), spec.Email);
-        db.SaveChanges();
+        RequestActivationImpl(dbManager.Query(db => db.UserInfos.First(u => u.Id == userId)), spec.Email);
+        dbManager.Commit();
     }
     
     public void SetEmail(long userId, ChangeEmailSpecType spec)
     {
-        var user = db.UserInfos.First(u => u.Id == userId);
+        var user = dbManager.Query(db => db.UserInfos.First(u => u.Id == userId));
 
         if (user.Email == spec.OldEmail &&
             user.PasswordHash == spec.Password)
         {
             user.Email = spec.NewEmail;
-            db.SaveChanges();
+            dbManager.Commit();
         }
         else
         {
@@ -187,13 +188,13 @@ public class ProfileService
     
     public void SetPassword(long userId, ChangePasswordSpecType spec)
     {
-        var user = db.UserInfos.First(u => u.Id == userId);
+        var user = dbManager.Query(db => db.UserInfos.First(u => u.Id == userId));
 
         if (user.Email == spec.Email)
             // user.PasswordHash == spec.OldPassword.ComputeSha256Hash(user.HashSalt))
         {
             user.PasswordHash = spec.NewPassword;
-            db.SaveChanges();
+            dbManager.Commit();
 
             mailService.SendMail(spec.Email, "Password was changed", "Dear " + user.Login + ", your password was changed!");
         }
@@ -205,7 +206,7 @@ public class ProfileService
     
     public ProfileFootprintInfoType GetProfileFootprint(long userId)
     {
-        var user = db.UserInfos.First(u => u.Id == userId);
+        var user = dbManager.Query(db => db.UserInfos.First(u => u.Id == userId));
 
         var parts = user.Email.Split('@');
         var leading = parts[0].Substring(0, Math.Min(2, parts[0].Length));
@@ -249,7 +250,7 @@ public class ProfileService
 
     public ListType GetAllUsers()
     {
-        var users = db.UserInfos.Select(it => it.TranslateUser()).ToArray();
+        var users = dbManager.Query(db => db.UserInfos.Select(it => it.TranslateUser()).ToArray());
         return new ListType()
         {
             Count = users.Length,

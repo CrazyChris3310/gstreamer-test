@@ -1,18 +1,13 @@
 using System.Data.SqlTypes;
-using System.Text;
-using Gst;
-using Gst.Rtsp;
-using Microsoft.EntityFrameworkCore;
 using MultiRoom;
+using MultiRoom2.Database;
 using MultiRoom2.Entities;
 using MultistreamConferenceTestService.Util;
-using Newtonsoft.Json;
-using WebSocketSharp.Net;
 using DateTime = System.DateTime;
 
-namespace MultiRoom2.Controllers;
+namespace MultiRoom2.Services;
 
-public class RoomService(DbContext db)
+public class RoomService(DbManager dbContext)
 {
     private Dictionary<string, Room> rooms = new();
     
@@ -28,6 +23,13 @@ public class RoomService(DbContext db)
         client.JoinRoom += (roomId) =>
         {
             rooms[roomId].AddClient(client);
+            dbContext.Update(db =>
+            {
+                var conference = db.Conferences.Find(roomId)!;
+                conference.MaxUsersOnline += 1;
+                db.Update(conference);
+            });
+            dbContext.Commit();
         };
         return client;
     }
@@ -38,6 +40,16 @@ public class RoomService(DbContext db)
         rooms[room.Id] = room;
         room.LeaveRoom += () =>
         {
+            dbContext.Update(db =>
+            {
+                var conference = db.Conferences.Find(room.Id);
+                if (conference != null)
+                {
+                    conference.MaxUsersOnline -= 1;
+                    db.Update(conference);
+                }
+            });
+            dbContext.Commit();
             // if (room.clients.Count == 0)
             // {
             //     rooms.Remove(room.Id);
@@ -51,12 +63,13 @@ public class RoomService(DbContext db)
             Description = request.Description,
             EndTime = SqlDateTime.MinValue.Value,
             isPublic = true,
-            MaxUsersOnline = 100,
+            MaxUsersOnline = 0,
             StartTime = request.StartStamp != null ? new DateTime(request.StartStamp.Ticks) : DateTime.UtcNow,
             Title = request.Title
         };
-        db.Conferences.Add(conference);
-        db.SaveChanges();
+        
+        dbContext.Update(db => db.Conferences.Add(conference));
+        dbContext.Commit();
         
         return new ConferenceCreationResponse()
         {
@@ -66,10 +79,12 @@ public class RoomService(DbContext db)
 
     public ListType GetConferences()
     {
-        var dbConferences = db.Conferences
-            .Where(it => rooms.Keys.Contains(it.Id))
-            .Select(it => it.TranslateConference(rooms[it.Id].streamingCLients.Count))
-            .ToArray();
+        var dbConferences = dbContext.Query(db =>
+            db.Conferences
+                .Where(it => rooms.Keys.Contains(it.Id))
+                .Select(it => it.TranslateConference())
+                .ToArray()
+        );
 
         return new ListType()
         {
@@ -78,6 +93,18 @@ public class RoomService(DbContext db)
             Count = dbConferences.Length,
             From = 0
         };
+    }
+
+    public ConferenceInfoType? GetConference(string id)
+    {
+        try
+        {
+            return dbContext.Query(db => db.Conferences?.Find(id)?.TranslateConference());
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
 }

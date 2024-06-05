@@ -18,8 +18,8 @@
         SmtpPickupDirectoryLocation="C:\Home\Ged\portable-project.ru\media-stream\research\test1\MultistreamConferenceTestService" />
 
   <LinkTemplates>
-    <ActivationLink>https://localhost/mysvc/profile?action=activate&amp;key={0}</ActivationLink>
-    <PasswordRestoreLink>https://localhost/mysvc/profile?action=restore&amp;key={0}</PasswordRestoreLink>
+    <ActivationLink>https://localhost/profile?action=activate&amp;key={0}</ActivationLink>
+    <PasswordRestoreLink>https://localhost/profile?action=restore&amp;key={0}</PasswordRestoreLink>
   </LinkTemplates>
 
   <!--

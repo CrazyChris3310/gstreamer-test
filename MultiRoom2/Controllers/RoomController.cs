@@ -32,8 +32,24 @@ public class RoomController(RoomService roomService, ProfileService profileServi
     [HttpGet]
     public void GetConferences(HttpListenerRequest req, HttpListenerResponse resp)
     {
-        var listType = roomService.GetConferences();
-        WriteObject(listType, resp);
+        var queryParams = WebUtils.GetQueryParams(req);
+        var roomId = queryParams.GetValueOrDefault("id");
+
+        if (roomId == null)
+        {
+            var listType = roomService.GetConferences();
+            WriteObject(listType, resp);
+        }
+        else
+        {
+            var conference = roomService.GetConference(roomId);
+            if (conference == null)
+            {
+                resp.StatusCode = 404;
+                return;
+            }
+            WriteObject(conference, resp);
+        }
     }
 
 }

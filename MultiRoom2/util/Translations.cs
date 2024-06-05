@@ -4,14 +4,14 @@ namespace MultistreamConferenceTestService.Util
 {
     static class Translations
     {
-        public static ConferenceInfoType TranslateConference(this Conference info, int participants)
+        public static ConferenceInfoType TranslateConference(this Conference info)
         {
             return new ConferenceInfoType() {
                 Id = info.Id,
                 Title = info.Title,
                 Description = info.Description,
                 CreationStamp = info.CreationStamp.TranslateStamp(),
-                Participants = participants,
+                Participants = info.MaxUsersOnline,
                 StartStamp = info.StartTime.TranslateStamp(),
                 EndStamp = info.EndTime.TranslateStamp(),
                 StateStamp = new[] { info.CreationStamp, info.EndTime, info.StartTime }.Max().TranslateStamp(),
@@ -44,7 +44,7 @@ namespace MultistreamConferenceTestService.Util
         {
             if (t == null) return null;
             return new StampType() {
-                Ticks = t.Value.Ticks
+                Ticks = ((DateTimeOffset)t).ToUnixTimeMilliseconds()
             };
         }
         public static IEnumerable<TOut> FillSubitems<TIn, TOut, TSubitem>(this IEnumerable<TIn> seq, IEnumerable<TSubitem> subSeq,
