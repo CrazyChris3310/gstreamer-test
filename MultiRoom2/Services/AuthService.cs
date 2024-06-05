@@ -6,7 +6,7 @@ using WebSocketSharp.Net;
 
 namespace MultiRoom2.Services;
 
-public class AuthService(AppContext db)
+public class AuthService(DbContext db)
 {
     private static readonly List<string> AllowedUrls = ["/login.html", "/register", "/auth"];
     

@@ -1,6 +1,12 @@
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Text.Unicode;
 using Gst;
 using MultiRoom;
 using MultiRoom2.Services;
+using WebApplication1;
+using WebSocketSharp;
 using WebSocketSharp.Net;
 using WebSocketSharp.Server;
 
@@ -10,84 +16,162 @@ public class DispatchController
 {
     private const string Location = @"C:\Users\danil\RiderProjects\MyGstreamerApp\MultiRoom2\Web";
     
-    private readonly AppContext db = new();
+    private readonly DbContext db = new();
 
     private readonly AuthService AuthService;
     private readonly RoomService RoomService;
+    private readonly MailService _mailService;
+    private readonly ProfileService _profileService;
 
-    public DispatchController()
+    private readonly List<Controller> _controllers = [];
+
+    public DispatchController(MultistreamConferenceConfiguration config)
     {
         AuthService = new AuthService(db);
         RoomService = new RoomService(db);
+        _mailService = new MailService();
+        _profileService = new ProfileService(db, config, _mailService);
+        
+        _controllers.Add(new ProfileController(_profileService));
+        _controllers.Add(new RoomController(RoomService, _profileService));
     }
 
     public void DispatchRequest(HttpRequestEventArgs ea)
     {
         DoDispatch(ea.Request, ea.Response);
-        ea.Response.Close();
+        // ea.Response.Close();
     }
 
     private void DoDispatch(HttpListenerRequest req, HttpListenerResponse response)
     {
-        if (!AuthService.IsAccessAllowed(req))
+        DisableCors(req, response);
+        
+        if (req.HttpMethod == "OPTIONS")
         {
-            response.StatusCode = 401;
+            Console.WriteLine("Options");
+            response.StatusCode = 200;
             return;
         }
 
+        
+        Type searchAttributeType;
         switch (req.HttpMethod)
         {
-            case "POST":
-                OnPost(req, response);
-                break;
             case "GET":
-                OnGet(req, response);
+                searchAttributeType = typeof(HttpGet);
+                break;
+            case "POST":
+                searchAttributeType = typeof(HttpPost);
                 break;
             default:
                 response.StatusCode = (int) HttpStatusCode.MethodNotAllowed;
                 return;
         }
-    }
-
-    private void OnGet(HttpListenerRequest req, HttpListenerResponse response)
-    {
-        var urlPath = req.Url.AbsolutePath;
-
-        if (urlPath.StartsWith("/room/"))
+        
+        foreach (var controller in _controllers)
         {
-            var exists = RoomService.GetRoom(req, response);
-            if (!exists) return;
-            GetStaticFile("/room.html", response);
+            var controllerType = controller.GetType();
+            var controllerAttr = controllerType.GetCustomAttribute(typeof(ApiController)) as ApiController;
+            string generalPath = "";
+            if (controllerAttr != null)
+            {
+                generalPath = controllerAttr.Path;
+            }
+            var methods = controllerType.GetMethods();
+            foreach (var method in methods)
+            {
+                var searchAttribute = method.GetCustomAttribute(searchAttributeType) as HttpAttribute;
+                if (searchAttribute == null)
+                {
+                    continue;
+                }
+                string? path = searchAttribute.Path;
+                if (path.IsNullOrEmpty())
+                {
+                    path = "/";
+                }
+
+                string totalPath = generalPath + path;
+
+                if (PathPatternMatch(totalPath, req.Url.AbsolutePath))
+                {
+                    try
+                    {
+                        method.Invoke(controller, [req, response]);
+                        return;
+                    }
+                    catch (ApplicationException e)
+                    {
+                        response.StatusCode = 500;
+                        response.WriteContent(Encoding.UTF8.GetBytes(e.Message));
+                        throw;
+                    } 
+                }
+            }
         }
-        else if (urlPath.Length == 0 || urlPath == "/")
+
+        if (searchAttributeType == typeof(HttpGet))
         {
-            GetStaticFile("/index.html", response);
-        }
-        else {
             GetStaticFile(req.Url.AbsolutePath, response);
         }
-    }
-
-    private void OnPost(HttpListenerRequest req, HttpListenerResponse response)
-    {
-        var urlPath = req.Url.AbsolutePath;
-
-        switch (urlPath)
+        else
         {
-            case "/room/create":
-                RoomService.CreateRoom(req, response);
-                break;
-            case "/auth":
-                AuthService.Login(req, response);
-                break;
-            case "/register":
-                AuthService.Register(req, response);
-                break;
-            default:
-                response.StatusCode = (int)HttpStatusCode.NotFound;
-                break;
+            response.StatusCode = 404;
         }
+
+        // switch (req.HttpMethod)
+        // {
+        //     case "POST":
+        //         OnPost(req, response);
+        //         break;
+        //     case "GET":
+        //         OnGet(req, response);
+        //         break;
+        //     default:
+        //         response.StatusCode = (int) HttpStatusCode.MethodNotAllowed;
+        //         return;
+        // }
     }
+
+    // private void OnGet(HttpListenerRequest req, HttpListenerResponse response)
+    // {
+    //     var urlPath = req.Url.AbsolutePath;
+    //
+    //     if (urlPath.StartsWith("/room/"))
+    //     {
+    //         var exists = RoomService.GetRoom(req, response);
+    //         if (!exists) return;
+    //         GetStaticFile("/room.html", response);
+    //     }
+    //     else if (urlPath.Length == 0 || urlPath == "/")
+    //     {
+    //         GetStaticFile("/index.html", response);
+    //     }
+    //     else {
+    //         GetStaticFile(req.Url.AbsolutePath, response);
+    //     }
+    // }
+
+    // private void OnPost(HttpListenerRequest req, HttpListenerResponse response)
+    // {
+    //     var urlPath = req.Url.AbsolutePath;
+    //
+    //     switch (urlPath)
+    //     {
+    //         case "/room/create":
+    //             RoomService.CreateRoom(req, response);
+    //             break;
+    //         case "/auth":
+    //             AuthService.Login(req, response);
+    //             break;
+    //         case "/register":
+    //             AuthService.Register(req, response);
+    //             break;
+    //         default:
+    //             response.StatusCode = (int)HttpStatusCode.NotFound;
+    //             break;
+    //     }
+    // }
 
     private static void GetStaticFile(string urlPath, HttpListenerResponse response)
     {
@@ -139,20 +223,33 @@ public class DispatchController
         return RoomService.CreateClient();
     }
 
-    public Dictionary<string, string> GetQueryParams(HttpListenerRequest req)
+    private bool PathPatternMatch(string template, string path)
     {
-        var query = req.Url.Query;
-        var queryTokens = new Dictionary<string, string>();
-        if (query != "")
+        var templateParts = template.Split("/").Where(it => it != "").ToList();
+        var parts = path.Split("/").Where(it => it != "").ToList();
+
+        if (templateParts.Count != parts.Count) return false;
+        
+        for (int i = 0; i < parts.Count; ++i)
         {
-            var tokens = query[1..].Split("&");
-            foreach (var token in tokens)
+            if (templateParts[i].StartsWith('{') && templateParts[i].EndsWith('}'))
             {
-                var keyVal = token.Split("=");
-                queryTokens[keyVal[0]] = keyVal[1];
+                continue;
+            } else if (templateParts[i] != parts[i])
+            {
+                return false;
             }
         }
 
-        return queryTokens;
+        return true;
+    }
+
+    private void DisableCors(HttpListenerRequest req, HttpListenerResponse response)
+    {
+        response.AddHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+        response.AddHeader("Access-Control-Allow-Methods", "*");
+        response.AddHeader("Access-Control-Max-Age", "1728000");
+        response.AddHeader("Access-Control-Allow-Credentials", "true");
+        response.AppendHeader("Access-Control-Allow-Origin", req.Url.Scheme + "://" + req.UserHostName + ":3000");
     }
 }

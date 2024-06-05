@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<MultistreamConferenceConfiguration xmlns="MultistreamConferenceServiceConfiguration">
+
+  <DbFileName>C:\Home\Ged\portable-project.ru\media-stream\research\test1\MultistreamConferenceTestService\sqlite.db</DbFileName>
+  <ServiceHostUrl>http://0.0.0.0:8181/mysvc/</ServiceHostUrl>
+
+  <SessionTimeout Hours="1" />
+  <TokenTimeout Days="7" />
+  <DeliveryTimeout Minutes="15" />
+
+  <LogsDirPath>C:\Home\Ged\portable-project.ru\media-stream\research\test1\MultistreamConferenceTestService\logs</LogsDirPath>
+
+  <Smtp SmtpLogin="learningsvc@localhost"
+        SmtpServerHost="127.0.0.1"
+        SmtpServerPort="25"
+        SmtpUseSsl="false"
+        SmtpUseDefaultCredentials="true"
+        SmtpPickupDirectoryLocation="C:\Home\Ged\portable-project.ru\media-stream\research\test1\MultistreamConferenceTestService" />
+
+  <LinkTemplates>
+    <ActivationLink>https://localhost/mysvc/profile?action=activate&amp;key={0}</ActivationLink>
+    <PasswordRestoreLink>https://localhost/mysvc/profile?action=restore&amp;key={0}</PasswordRestoreLink>
+  </LinkTemplates>
+
+  <!--
+  <Smtp SmtpServerHost="smtp.live.com"
+        SmtpServerPort="587"
+        SmtpLogin="ipm.local@hotmail.com"
+        SmtpPassword="ifmo2020"
+        SmtpUseDefaultCredentials="false" />
+  -->
+
+</MultistreamConferenceConfiguration>

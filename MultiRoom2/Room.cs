@@ -1,4 +1,5 @@
 using MultiRoom;
+using MultiRoom2.Entities;
 
 namespace MultiRoom2;
 
@@ -8,6 +9,8 @@ public class Room(string id, int host)
     public readonly string Id = id;
     public Dictionary<int, Client> clients = new();
     public Dictionary<int, Client> streamingCLients = new();
+
+    public Conference Conference;
 
     public Action LeaveRoom;
 

@@ -1,0 +1,86 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<xs:schema id="MultistreamConferenceServiceConfiguration"
+           targetNamespace="MultistreamConferenceServiceConfiguration"
+           elementFormDefault="qualified"
+           xmlns="MultistreamConferenceServiceConfiguration"
+           xmlns:mstns="MultistreamConferenceServiceConfiguration"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <xs:element name="MultistreamConferenceConfiguration" type="MultistreamConferenceConfigurationType" />
+  
+  <xs:complexType name="MultistreamConferenceConfigurationType">
+    <xs:all>
+      <xs:element name="DbFileName" type="string" />
+      <xs:element name="ServiceHostUrl" type="string" />
+      <xs:element name="SessionTimeout" type="TimeSpanType" />
+      <xs:element name="TokenTimeout" type="TimeSpanType" />
+      <xs:element name="DeliveryTimeout" type="TimeSpanType" />
+      <xs:element name="Smtp" type="SmtpConfigurationType" />
+      <xs:element name="LogsDirPath" type="string" />
+      <xs:element name="LinkTemplates" type="MultistreamConferenceLinkTemplatesType" />
+    </xs:all>
+  </xs:complexType>
+
+  <xs:complexType name="MultistreamConferenceLinkTemplatesType">
+    <xs:all>
+      <xs:element name="ActivationLink" type="string" />
+      <xs:element name="PasswordRestoreLink" type="string" />
+    </xs:all>
+  </xs:complexType>
+
+  <xs:complexType name="TimeSpanType">
+    <xs:attribute name="Days" type="int" />
+    <xs:attribute name="Hours" type="int" />
+    <xs:attribute name="Minutes" type="int" />
+    <xs:attribute name="Seconds" type="int" />
+  </xs:complexType>
+
+
+  <xs:complexType name="SmtpConfigurationType">
+    <xs:attribute name="SmtpServerHost" type="string" />
+    <xs:attribute name="SmtpServerPort" type="int" />
+    <xs:attribute name="SmtpLogin" type="string" />
+    <xs:attribute name="SmtpPassword" type="string" />
+    <xs:attribute name="SmtpUseSsl" type="bool" />
+    <xs:attribute name="SmtpUseDefaultCredentials" type="bool" />
+    
+    <xs:attribute name="SmtpPickupDirectoryLocation " type="string" />
+  </xs:complexType>
+  
+  <!-- Region Simple types -->
+
+  <xs:simpleType name="Guid">
+    <xs:restriction base="string">
+      <xs:pattern value="^({)?(?(1)|(\()?)[0-9A-F]{8}(-)?([0-9A-F]{4}(?(3)-)){3}[0-9A-F]{12}(?(1)}|(?(2)\)))$" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="word">
+    <xs:restriction base="string">
+      <xs:pattern value="[\w]+" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- EndRegion -->
+
+  <!-- Region builtins-->
+
+  <xs:simpleType name="int">
+    <xs:restriction base="xs:int" />
+  </xs:simpleType>
+
+  <xs:simpleType name="long">
+    <xs:restriction base="xs:long" />
+  </xs:simpleType>
+
+  <xs:simpleType name="string">
+    <xs:restriction base="xs:string" />
+  </xs:simpleType>
+
+  <xs:simpleType name="bool">
+    <xs:restriction base="xs:boolean" />
+  </xs:simpleType>
+
+  <!-- EndRegion -->
+
+</xs:schema>

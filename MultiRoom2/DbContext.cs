@@ -3,10 +3,15 @@ using MultiRoom2.Entities;
 
 namespace MultiRoom2;
 
-public sealed class AppContext : DbContext
+public sealed class DbContext : Microsoft.EntityFrameworkCore.DbContext
 {
     public DbSet<User> Users => Set<User>();
-    public AppContext() => Database.EnsureCreated();
+
+    public DbSet<UserInfo> UserInfos => Set<UserInfo>();
+
+    public DbSet<Conference> Conferences => Set<Conference>();
+    
+    public DbContext() => Database.EnsureCreated();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

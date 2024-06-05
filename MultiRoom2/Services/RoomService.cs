@@ -1,34 +1,25 @@
+using System.Data.SqlTypes;
 using System.Text;
 using Gst;
 using Gst.Rtsp;
 using Microsoft.EntityFrameworkCore;
 using MultiRoom;
 using MultiRoom2.Entities;
+using MultistreamConferenceTestService.Util;
 using Newtonsoft.Json;
 using WebSocketSharp.Net;
+using DateTime = System.DateTime;
 
 namespace MultiRoom2.Controllers;
 
-public class RoomService(AppContext db)
+public class RoomService(DbContext db)
 {
     private Dictionary<string, Room> rooms = new();
-
-    public bool GetRoom(HttpListenerRequest req, HttpListenerResponse resp)
+    
+    public bool RoomExists(string roomId)
     {
-        var path = req.Url.AbsolutePath;
-        var roomId = path[1..].Split("/").Last();
-        
         var roomExists = rooms.TryGetValue(roomId, out var room);
-        if (!roomExists)
-        {
-            resp.StatusCode = 404;
-            return false;
-        }
-        else
-        {
-            resp.StatusCode = 200;
-            return true;
-        }
+        return roomExists;
     }
 
     public Client CreateClient()
@@ -41,11 +32,9 @@ public class RoomService(AppContext db)
         return client;
     }
 
-    public void CreateRoom(HttpListenerRequest req, HttpListenerResponse resp)
+    public ConferenceCreationResponse CreateRoom(long userId, ConferenceInfoType request)
     {
-        var creds = req.Cookies["authentication"]?.Value!;
-        var userId = int.Parse(creds.Split("/")[0]);
-        var room = new Room(Guid.NewGuid().ToString(), userId);
+        var room = new Room(Guid.NewGuid().ToString(), (int)userId);
         rooms[room.Id] = room;
         room.LeaveRoom += () =>
         {
@@ -54,15 +43,41 @@ public class RoomService(AppContext db)
             //     rooms.Remove(room.Id);
             // }
         };
-        var body = JsonConvert.SerializeObject(new CreateRoomResponse { RoomId = room.Id });
 
-        var byteId = Encoding.UTF8.GetBytes(body);
+        var conference = new Conference()
+        {
+            Id = room.Id,
+            CreationStamp = DateTime.UtcNow,
+            Description = request.Description,
+            EndTime = SqlDateTime.MinValue.Value,
+            isPublic = true,
+            MaxUsersOnline = 100,
+            StartTime = request.StartStamp != null ? new DateTime(request.StartStamp.Ticks) : DateTime.UtcNow,
+            Title = request.Title
+        };
+        db.Conferences.Add(conference);
+        db.SaveChanges();
         
-        resp.ContentType = "text/plain";
-        resp.ContentLength64 = byteId.Length;
-        resp.ContentEncoding = Encoding.UTF8;
-        resp.OutputStream.Write(byteId, 0, byteId.Length);
-        resp.OutputStream.Flush();
-        resp.StatusCode = 200;
+        return new ConferenceCreationResponse()
+        {
+            RoomId = room.Id
+        };
     }
+
+    public ListType GetConferences()
+    {
+        var dbConferences = db.Conferences
+            .Where(it => rooms.Keys.Contains(it.Id))
+            .Select(it => it.TranslateConference(rooms[it.Id].streamingCLients.Count))
+            .ToArray();
+
+        return new ListType()
+        {
+            TotalCount = dbConferences.Length,
+            Items = dbConferences,
+            Count = dbConferences.Length,
+            From = 0
+        };
+    }
+
 }

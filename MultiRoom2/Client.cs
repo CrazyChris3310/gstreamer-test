@@ -694,7 +694,7 @@ public class Client : WebSocketBehavior
         var creds = auth.Split("/");
         id = int.Parse(creds[0]);
         username = creds[1];
-        var roomId = Context.QueryString["roomId"]!;
+        var roomId = Context.QueryString["roomId"]!;    
         JoinRoom(roomId);
     }
 
